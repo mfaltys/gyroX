@@ -14,28 +14,36 @@ static const char *TAG = "LEDS";
 static rmt_channel_handle_t s_chan = NULL;
 static rmt_encoder_handle_t s_copy_enc = NULL;
 
-/* One LED frame: 24 data bits (GRB, MSB first) + a >=50 us low latch symbol.
- * Fits in one C3 RMT memory block (48 symbols), so no custom encoder needed. */
-static rmt_symbol_word_t s_frame[24 + 1];
+/* One continuous frame: LED_COUNT * 24 data bits (GRB, MSB first) + one long
+ * latch. The RMT driver streams payloads larger than the channel's 48-symbol
+ * memory block, so the whole rail goes out as a single unbroken WS2812 frame.
+ * That matters: with separate per-LED frames, each LED applies its own reset
+ * detection to the ~55 us low gap between frames - and clone LEDs have reset
+ * thresholds anywhere from ~30 us to 80+ us, so some LEDs desync mid-stream
+ * and latch garbage (first LED fine, rest random). One frame + one long latch
+ * removes that ambiguity completely. */
+static rmt_symbol_word_t s_frame[LED_COUNT * 24 + 1];
 
-static void build_frame(uint8_t r, uint8_t g, uint8_t b)
+static void build_frames(uint8_t r, uint8_t g, uint8_t b)
 {
     /* WS2812B wants GRB order */
     uint32_t grb = ((uint32_t)g << 16) | ((uint32_t)r << 8) | b;
     int i = 0;
-    for (int bit = 23; bit >= 0; bit--) {
-        int on = (grb >> bit) & 1;
-        s_frame[i].level0 = 1;
-        s_frame[i].duration0 = on ? 6 : 3;   /* T1H 750 ns / T0H 375 ns */
-        s_frame[i].level1 = 0;
-        s_frame[i].duration1 = on ? 4 : 7;   /* T1L 500 ns / T0L 875 ns */
-        i++;
+    for (int led = 0; led < LED_COUNT; led++) {
+        for (int bit = 23; bit >= 0; bit--) {
+            int on = (grb >> bit) & 1;
+            s_frame[i].level0 = 1;
+            s_frame[i].duration0 = on ? 6 : 3;   /* T1H 750 ns / T0H 375 ns */
+            s_frame[i].level1 = 0;
+            s_frame[i].duration1 = on ? 4 : 7;   /* T1L 500 ns / T0L 875 ns */
+            i++;
+        }
     }
-    /* latch: >= 50 us of low level (400 ticks) */
-    s_frame[24].level0 = 0;
-    s_frame[24].duration0 = 400;
-    s_frame[24].level1 = 0;
-    s_frame[24].duration1 = 1;
+    /* latch: ~300 us of low (2400 ticks) - safe for every WS2812x/SK6812 clone */
+    s_frame[i].level0 = 0;
+    s_frame[i].duration0 = 2400;
+    s_frame[i].level1 = 0;
+    s_frame[i].duration1 = 1;
 }
 
 static esp_err_t push_frame(void)
@@ -92,15 +100,15 @@ void leds_apply(void)
     }
     uint8_t r = 0, g = 0, b = 0;
     if (s_cfg.leds_on) {
-        r = (s_cfg.leds_color >> 16) & 0xFF;
-        g = (s_cfg.leds_color >> 8) & 0xFF;
-        b = s_cfg.leds_color & 0xFF;
+        int32_t br = s_cfg.leds_bright;
+        if (br < 0) br = 0;
+        if (br > 100) br = 100;
+        r = (uint8_t)(((int32_t)((s_cfg.leds_color >> 16) & 0xFF) * br) / 100);
+        g = (uint8_t)(((int32_t)((s_cfg.leds_color >> 8) & 0xFF) * br) / 100);
+        b = (uint8_t)(((int32_t)(s_cfg.leds_color & 0xFF) * br) / 100);
     }
-    for (int i = 0; i < LED_COUNT; i++) {
-        build_frame(r, g, b);
-        if (push_frame() != ESP_OK) {
-            ESP_LOGW(TAG, "LED frame transmit failed");
-            return;
-        }
+    build_frames(r, g, b);
+    if (push_frame() != ESP_OK) {
+        ESP_LOGW(TAG, "LED frame transmit failed");
     }
 }

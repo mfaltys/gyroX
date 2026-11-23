@@ -70,6 +70,8 @@ esp_err_t config_load(void)
     s_cfg.leds_on = v;
     if (nvs_get_i32(handle, CFG_LEDS_COLOR, &v) != ESP_OK) { v = DEF_LEDS_COLOR; dirty = true; }
     s_cfg.leds_color = (uint32_t)v;
+    if (nvs_get_i32(handle, CFG_LEDS_BRIGHT, &v) != ESP_OK) { v = DEF_LEDS_BRIGHT; dirty = true; }
+    s_cfg.leds_bright = v;
 
     sz = sizeof(s_cfg.gyro_z_offset);
     if (nvs_get_blob(handle, CFG_GYRO_Z_OFFSET, &s_cfg.gyro_z_offset, &sz) != ESP_OK) {
@@ -102,6 +104,7 @@ esp_err_t config_load(void)
         nvs_set_i32(handle, CFG_PROFILE, s_cfg.profile);
         nvs_set_i32(handle, CFG_LEDS_ON, s_cfg.leds_on);
         nvs_set_i32(handle, CFG_LEDS_COLOR, (int32_t)s_cfg.leds_color);
+        nvs_set_i32(handle, CFG_LEDS_BRIGHT, s_cfg.leds_bright);
         nvs_set_blob(handle, CFG_GYRO_Z_OFFSET, &s_cfg.gyro_z_offset, sizeof(s_cfg.gyro_z_offset));
         nvs_set_str(handle, CFG_WEB_AP_SSID, s_cfg.web_ap_ssid);
         nvs_commit(handle);
@@ -142,6 +145,7 @@ esp_err_t config_save(void)
     if (ret == ESP_OK) ret = nvs_set_i32(handle, CFG_PROFILE, s_cfg.profile);
     if (ret == ESP_OK) ret = nvs_set_i32(handle, CFG_LEDS_ON, s_cfg.leds_on);
     if (ret == ESP_OK) ret = nvs_set_i32(handle, CFG_LEDS_COLOR, (int32_t)s_cfg.leds_color);
+    if (ret == ESP_OK) ret = nvs_set_i32(handle, CFG_LEDS_BRIGHT, s_cfg.leds_bright);
     if (ret == ESP_OK) ret = nvs_set_blob(handle, CFG_GYRO_Z_OFFSET, &s_cfg.gyro_z_offset, sizeof(s_cfg.gyro_z_offset));
     if (ret == ESP_OK) ret = nvs_set_str(handle, CFG_WEB_AP_SSID, s_cfg.web_ap_ssid);
 
@@ -178,6 +182,7 @@ void config_apply_defaults(void)
     s_cfg.profile = DEF_PROFILE;
     s_cfg.leds_on = DEF_LEDS_ON;
     s_cfg.leds_color = DEF_LEDS_COLOR;
+    s_cfg.leds_bright = DEF_LEDS_BRIGHT;
     strncpy(s_cfg.web_ap_ssid, WEB_AP_SSID, sizeof(s_cfg.web_ap_ssid) - 1);
     s_cfg.web_ap_ssid[sizeof(s_cfg.web_ap_ssid) - 1] = '\0';
 }
@@ -214,6 +219,7 @@ esp_err_t config_set_from_json(cJSON *root)
     UPDATE_I32(CFG_HEADING_HOLD_P, hold_p, 0, 500);
     UPDATE_I32(CFG_PROFILE, profile, 0, 3);
     UPDATE_I32(CFG_LEDS_ON, leds_on, 0, 1);
+    UPDATE_I32(CFG_LEDS_BRIGHT, leds_bright, 0, 100);
 
 #undef UPDATE_I32
 

@@ -14,6 +14,8 @@
 #include <esp_http_server.h>
 #include <esp_app_desc.h>
 #include <nvs_flash.h>
+#include <esp_ota_ops.h>
+#include <esp_system.h>
 #include <cJSON.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -282,6 +284,7 @@ static esp_err_t config_get_handler(httpd_req_t *req)
     cJSON_AddNumberToObject(r, "profile", s_cfg.profile);
     cJSON_AddNumberToObject(r, "leds_on", s_cfg.leds_on);
     cJSON_AddNumberToObject(r, "leds_color", (double)s_cfg.leds_color);
+    cJSON_AddNumberToObject(r, "leds_bright", s_cfg.leds_bright);
     cJSON_AddStringToObject(r, "web_ap_ssid", s_cfg.web_ap_ssid);
     return json_reply(req, r);
 }
@@ -351,6 +354,80 @@ static esp_err_t version_get_handler(httpd_req_t *req)
     return json_reply(req, r);
 }
 
+/* ---------- /api/ota (firmware upload) ---------- */
+/* The browser POSTs the raw .bin as the request body; we stream it into the
+ * inactive OTA slot chunk by chunk, validate, switch the boot partition and
+ * reboot. The bootloader verifies the image at boot and falls back to the
+ * other slot if it is invalid, so a failed upload can't brick the car. */
+static esp_err_t ota_post_handler(httpd_req_t *req)
+{
+    const esp_partition_t *update = esp_ota_get_next_update_partition(NULL);
+    if (update == NULL) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "No OTA partition in table");
+        return ESP_FAIL;
+    }
+    if (req->content_len <= 0) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Empty upload");
+        return ESP_FAIL;
+    }
+    if ((size_t)req->content_len > update->size) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Image larger than OTA partition");
+        return ESP_FAIL;
+    }
+
+    esp_ota_handle_t ota = 0;
+    esp_err_t err = esp_ota_begin(update, OTA_WITH_SEQUENTIAL_WRITES, &ota);
+    if (err != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "esp_ota_begin failed");
+        return ESP_FAIL;
+    }
+
+    char buf[1024];
+    int64_t remaining = (int64_t)req->content_len;
+    int idle_retries = 0;
+    while (remaining > 0) {
+        int want = (remaining < (int64_t)sizeof(buf)) ? (int)remaining : (int)sizeof(buf);
+        int received = httpd_req_recv(req, buf, want);
+        if (received < 0) {
+            if (received == HTTPD_SOCK_ERR_TIMEOUT && idle_retries++ < 60) {
+                vTaskDelay(pdMS_TO_TICKS(50));
+                continue;
+            }
+            esp_ota_abort(ota);
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Transfer interrupted");
+            return ESP_FAIL;
+        }
+        idle_retries = 0;
+        err = esp_ota_write(ota, buf, received);
+        if (err != ESP_OK) {
+            esp_ota_abort(ota);
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Flash write failed");
+            return ESP_FAIL;
+        }
+        remaining -= received;
+    }
+
+    err = esp_ota_end(ota);
+    if (err != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid image (esp_ota_end failed)");
+        return ESP_FAIL;
+    }
+    err = esp_ota_set_boot_partition(update);
+    if (err != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to set boot partition");
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG, "OTA: %d bytes -> %s, rebooting", (int)req->content_len, update->label);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, "{\"ok\":true,\"msg\":\"Update written, rebooting\"}");
+
+    /* Let the response leave the stack, then swap partitions */
+    vTaskDelay(pdMS_TO_TICKS(1500));
+    esp_restart();
+    return ESP_OK;
+}
+
 typedef struct {
     const char *uri;
     httpd_method_t method;
@@ -371,6 +448,7 @@ static const uri_map_t s_uris[] = {
     { "/api/calibrate",       HTTP_POST,   calibrate_post_handler },
     { "/api/reset_heading",   HTTP_POST,   reset_heading_post_handler },
     { "/api/version",         HTTP_GET,    version_get_handler },
+    { "/api/ota",             HTTP_POST,   ota_post_handler },
 };
 
 void web_start(void)

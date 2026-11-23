@@ -70,6 +70,7 @@
 #define LED_COUNT          3        /* WS2812B LEDs on the rail                  */
 #define DEF_LEDS_ON        0        /* rail off by default                       */
 #define DEF_LEDS_COLOR     0xFF0000 /* packed 0xRRGGBB                           */
+#define DEF_LEDS_BRIGHT    100      /* 0..100 percent                            */
 
 /* ------------------- NVS config keys ------------------- */
 #define CFG_VERSION          "cfg_ver"        /* int32  */
@@ -89,6 +90,7 @@
 #define CFG_PROFILE          "profile"        /* int32  0 gen 1 drift 2 bash 3 custom   */
 #define CFG_LEDS_ON          "leds_on"        /* int32  0/1                             */
 #define CFG_LEDS_COLOR       "leds_color"     /* int32  packed 0xRRGGBB                 */
+#define CFG_LEDS_BRIGHT      "leds_bright"    /* int32  0..100 percent                  */
 #define CFG_WEB_AP_SSID      "web_ap_ssid"    /* string                                 */
 
 /* ------------------- Compile-time defaults ------------------- */
@@ -123,6 +125,7 @@ typedef struct {
     int32_t profile;         /* 0 general, 1 drift, 2 bashing, 3 custom */
     int32_t leds_on;         /* 0/1 */
     uint32_t leds_color;     /* packed 0xRRGGBB */
+    int32_t leds_bright;     /* 0..100 percent */
     char    web_ap_ssid[32];
 } drift_config_t;
 

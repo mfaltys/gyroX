@@ -26,7 +26,8 @@ MPU-6050 (I2C) ─┘        (gyro mixing)
 - Adjustable gain, axis reversing, deadband, trim, servo min/center/max (µs)
 - Tuning profiles — General / Drift / Bashing / Custom — one tap in the web UI
 - Advanced sensor settings: gyro DLPF bandwidth and full-scale range, applied live
-- 3× WS2812B LED rail (XIAO D6): on/off + color from the web UI, saved in NVS
+- 3× WS2812B LED rail (XIAO D6): on/off, color and brightness from the web UI, saved in NVS
+- Firmware update (OTA) from the web UI — upload the .bin over the AP, no USB needed
 - Web UI at `http://192.168.4.1/` while in AP mode; captive portal DNS included
 - All settings saved in NVS and survive reboots
 - 100 Hz control loop
@@ -120,6 +121,7 @@ colors, or feed the rail from an external supply (common ground still required).
 | profile | 0 general, 1 drift, 2 bashing, 3 custom | 0 |
 | leds_on | LED rail power | 0 |
 | leds_color | LED rail color, 0xRRGGBB | 0xFF0000 |
+| leds_bright | LED rail brightness, % | 100 |
 | web_ap_ssid | AP SSID in web UI mode | ESP32-DRIFT |
 
 ## Build & flash
@@ -133,7 +135,7 @@ a COM port automatically.
 esp32-drift/
 ├── CMakeLists.txt
 ├── sdkconfig.defaults      # ESP-IDF sdkconfig overrides (esp32c3, 4 MB, custom partitions)
-├── partitions.csv          # NVS + factory app partition table
+├── partitions.csv          # NVS + dual OTA app slots (ota_0/ota_1) + otadata
 ├── README.md
 ├── main/
 │   ├── CMakeLists.txt
@@ -158,6 +160,12 @@ esp32-drift/
   that with the car pointing straight.
 - AP mode is deliberately temporary: 3 s boot-button hold after power-up → AP on;
   power cycle → AP off.
+- OTA: the upload is written to the *inactive* app slot and the bootloader verifies
+  the image at boot, falling back to the previous firmware if it is invalid. The car
+  may micro-glitch for a moment while flash sectors erase — update while parked.
+  After an OTA reboot the AP is off (drive mode): hold the boot button 3 s to return
+  here. The partition layout is OTA-only (no factory slot), so the first firmware
+  install after adopting this table must be over USB.
 - ELRS PWM update rates vary (50–500 Hz typical); the decoder edge-times every pulse
   and low-pass filters the result, so it works across rates.
 
