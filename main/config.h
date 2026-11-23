@@ -22,6 +22,7 @@
 #define GPIO_I2C_SDA     GPIO_NUM_7    /* XIAO D5  - MPU-6050 SDA                            */
 #define GPIO_I2C_SCL     GPIO_NUM_6    /* XIAO D4  - MPU-6050 SCL                            */
 #define GPIO_BOOT_BTN    GPIO_NUM_9    /* XIAO boot button (D9) - hold 3 s after boot for web UI */
+#define GPIO_LED_DATA    GPIO_NUM_21   /* XIAO D6  - WS2812B data (3-LED rail), non-strap pin */
 
 /* --------------------- MPU-6050 (I2C) --------------------- */
 #define MPU6050_ADDR      0x68         /* AD0 tied to GND (0x69 if AD0 -> VCC)      */
@@ -51,6 +52,8 @@
 /* --------------------- Gyro --------------------- */
 #define GYRO_CAL_SAMPLES   1500     /* samples at boot while car sits still      */
 #define GYRO_CAL_MS        1500     /* time allowed for boot calibration         */
+#define DEF_GYRO_DLPF      21       /* DLPF bandwidth Hz: 5 / 10 / 21 / 44       */
+#define DEF_GYRO_FS        1000     /* full-scale deg/s: 250 / 500 / 1000 / 2000 */
 
 /* ------------------- Web UI (AP mode) ------------------- */
 #define WEB_BTN_HOLD_MS   3000      /* hold BOOT button this long after boot  */
@@ -62,6 +65,11 @@
 #define WEB_AP_NETMASK    "255.255.255.0"
 #define WEB_AP_GW         "192.168.4.1"
 #define WEB_DNS_PORT      53
+
+/* ----------------------- LED rail ------------------------- */
+#define LED_COUNT          3        /* WS2812B LEDs on the rail                  */
+#define DEF_LEDS_ON        0        /* rail off by default                       */
+#define DEF_LEDS_COLOR     0xFF0000 /* packed 0xRRGGBB                           */
 
 /* ------------------- NVS config keys ------------------- */
 #define CFG_VERSION          "cfg_ver"        /* int32  */
@@ -76,6 +84,11 @@
 #define CFG_SERVO_MAX_US     "servo_max_us"   /* int32                                  */
 #define CFG_GYRO_Z_OFFSET    "gyro_z_off"    /* float (blob) deg/s                     */
 #define CFG_HEADING_HOLD_P   "hold_p"         /* int32  x10                             */
+#define CFG_GYRO_DLPF        "gyro_dlpf"      /* int32  Hz: 5/10/21/44                  */
+#define CFG_GYRO_FS          "gyro_fs"        /* int32  deg/s: 250/500/1000/2000        */
+#define CFG_PROFILE          "profile"        /* int32  0 gen 1 drift 2 bash 3 custom   */
+#define CFG_LEDS_ON          "leds_on"        /* int32  0/1                             */
+#define CFG_LEDS_COLOR       "leds_color"     /* int32  packed 0xRRGGBB                 */
 #define CFG_WEB_AP_SSID      "web_ap_ssid"    /* string                                 */
 
 /* ------------------- Compile-time defaults ------------------- */
@@ -87,6 +100,7 @@
 #define DEF_STEER_DEADBAND       8
 #define DEF_STEER_TRIM           0
 #define DEF_HEADING_HOLD_P      40   /* 4.0 deg/s per degree heading error      */
+#define DEF_PROFILE              0   /* 0 general, 1 drift, 2 bashing, 3 custom  */
 
 /* ------------------------------------------------------------------ */
 /* Runtime configuration (loaded from / saved to NVS)                 */
@@ -104,6 +118,11 @@ typedef struct {
     int32_t servo_max_us;
     float   gyro_z_offset;   /* deg/s */
     int32_t hold_p;          /* x10 */
+    int32_t gyro_dlpf;       /* Hz: 5/10/21/44 */
+    int32_t gyro_fs;         /* deg/s: 250/500/1000/2000 */
+    int32_t profile;         /* 0 general, 1 drift, 2 bashing, 3 custom */
+    int32_t leds_on;         /* 0/1 */
+    uint32_t leds_color;     /* packed 0xRRGGBB */
     char    web_ap_ssid[32];
 } drift_config_t;
 

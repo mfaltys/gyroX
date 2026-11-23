@@ -4,6 +4,7 @@
 #include "mixing.h"
 #include "pwm_in.h"
 #include "servo.h"
+#include "leds.h"
 
 #include <string.h>
 #include <esp_log.h>
@@ -276,6 +277,11 @@ static esp_err_t config_get_handler(httpd_req_t *req)
     cJSON_AddNumberToObject(r, "servo_max_us", s_cfg.servo_max_us);
     cJSON_AddNumberToObject(r, "hold_p", s_cfg.hold_p);
     cJSON_AddNumberToObject(r, "gyro_z_offset", (double)s_cfg.gyro_z_offset);
+    cJSON_AddNumberToObject(r, "gyro_dlpf", s_cfg.gyro_dlpf);
+    cJSON_AddNumberToObject(r, "gyro_fs", s_cfg.gyro_fs);
+    cJSON_AddNumberToObject(r, "profile", s_cfg.profile);
+    cJSON_AddNumberToObject(r, "leds_on", s_cfg.leds_on);
+    cJSON_AddNumberToObject(r, "leds_color", (double)s_cfg.leds_color);
     cJSON_AddStringToObject(r, "web_ap_ssid", s_cfg.web_ap_ssid);
     return json_reply(req, r);
 }
@@ -312,6 +318,9 @@ static esp_err_t config_post_handler(httpd_req_t *req)
     if (err != ESP_OK) {
         return json_err(req, "Failed to save config");
     }
+    /* Apply settings that take effect live (no reboot needed) */
+    gyro_apply_sensor_config();
+    leds_apply();
     return json_ok(req);
 }
 

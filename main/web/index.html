@@ -41,6 +41,7 @@
 
   <section class="panel">
     <h2>Gyro settings</h2>
+    <div class="row"><label>Profile</label><select id="mProfile"><option value="0">General</option><option value="1">Drift</option><option value="2">Bashing</option><option value="3">Custom</option></select></div>
     <div class="row"><label>Mode</label><select id="mMode"><option value="0">Rate</option><option value="1">Heading hold</option></select></div>
     <div class="row"><label>Gain (% per 100 °/s)</label><input type="range" id="mGain" min="0" max="200"><span id="vGain">8.0</span></div>
     <div class="row"><label>Gyro reversed</label><label class="switch"><input type="checkbox" id="mGyroRev"><span class="sl"></span></label></div>
@@ -56,9 +57,23 @@
     <div class="row"><label>Center</label><input type="number" id="mScenter" min="100" max="4000"></div>
     <div class="row"><label>Max</label><input type="number" id="mSmax" min="100" max="4000"></div>
 
-    <div class="row"><label>Gyro zero offset (°/s)</label><input type="number" id="mGzoff" step="0.001"></div>
+    <details class="adv">
+      <summary>Advanced sensor settings</summary>
+      <div class="row"><label>Gyro filter (DLPF)</label><select id="mDlpf"><option value="5">5 Hz (smooth)</option><option value="10">10 Hz</option><option value="21">21 Hz (drift)</option><option value="44">44 Hz (snappy)</option></select></div>
+      <div class="row"><label>Gyro range</label><select id="mFs"><option value="250">±250 °/s</option><option value="500">±500 °/s</option><option value="1000">±1000 °/s</option><option value="2000">±2000 °/s</option></select></div>
+      <div class="row"><label>Gyro zero offset (°/s)</label><input type="number" id="mGzoff" step="0.001"></div>
+      <div class="msg">Applied on Save — no reboot needed.</div>
+    </details>
+
     <div class="row act"><button id="btnCal">Calibrate gyro (car still!)</button><button id="btnSave">Save</button><button id="btnLoad">Reload</button></div>
     <div id="mMsg" class="msg"></div>
+  </section>
+
+  <section class="panel">
+    <h2>LED rail</h2>
+    <div class="row"><label>Power</label><label class="switch"><input type="checkbox" id="mLedsOn"><span class="sl"></span></label></div>
+    <div class="row"><label>Color</label><span style="display:flex;align-items:center;gap:8px;"><input type="color" id="mLedsColor" value="#ff0000"><span id="vLedsColor" class="hex">#ff0000</span></span></div>
+    <div class="msg">3× WS2812B on XIAO D6 — changes apply and save immediately.</div>
   </section>
 </div>
 <script>
@@ -79,6 +94,13 @@ function applyCfg(c){
   el('mScenter').value = c.servo_center_us;
   el('mSmax').value = c.servo_max_us;
   el('mGzoff').value = c.gyro_z_offset;
+  el('mDlpf').value = c.gyro_dlpf;
+  el('mFs').value = c.gyro_fs;
+  el('mProfile').value = (c.profile === undefined ? 0 : c.profile);
+  el('mLedsOn').checked = c.leds_on === 1;
+  const hexc = '#' + Number(c.leds_color || 0).toString(16).padStart(6, '0');
+  el('mLedsColor').value = hexc;
+  el('vLedsColor').textContent = hexc;
 }
 
 function saveCfg(){
@@ -93,6 +115,11 @@ function saveCfg(){
     servo_center_us: Number(el('mScenter').value),
     servo_max_us: Number(el('mSmax').value),
     gyro_z_offset: Number(el('mGzoff').value),
+    gyro_dlpf: Number(el('mDlpf').value),
+    gyro_fs: Number(el('mFs').value),
+    profile: Number(el('mProfile').value),
+    leds_on: el('mLedsOn').checked ? 1 : 0,
+    leds_color: parseInt(el('mLedsColor').value.slice(1), 16),
   };
   el('mMsg').textContent = 'Saving…';
   post('/api/config', body).then(async r => {
@@ -151,6 +178,43 @@ get('/api/version').then(r => { if (r.version) el('ver').textContent = 'fw: ' + 
     el(d).textContent = v;
   });
 });
+
+const PRESETS = {
+  0: { name: 'General', gyro_mode: 0, gyro_gain: 100, steer_deadband: 8, steer_trim: 0, servo_min_us: 500, servo_center_us: 1500, servo_max_us: 2500 },
+  1: { name: 'Drift',   gyro_mode: 0, gyro_gain: 200, steer_deadband: 4, steer_trim: 0, servo_min_us: 600, servo_center_us: 1500, servo_max_us: 2400 },
+  2: { name: 'Bashing', gyro_mode: 0, gyro_gain: 120, steer_deadband: 7, steer_trim: 0, servo_min_us: 500, servo_center_us: 1500, servo_max_us: 2500 },
+};
+
+el('mProfile').addEventListener('change', () => {
+  const p = Number(el('mProfile').value);
+  if (p === 3) return;                    /* Custom: keep current values */
+  const pre = PRESETS[p];
+  if (!pre) return;
+  el('mMode').value = pre.gyro_mode;
+  el('mGain').value = pre.gyro_gain;
+  el('vGain').textContent = (pre.gyro_gain / 10).toFixed(1);
+  el('mDeadband').value = pre.steer_deadband;
+  el('vDeadband').textContent = pre.steer_deadband;
+  el('mTrim').value = pre.steer_trim;
+  el('vTrim').textContent = pre.steer_trim;
+  el('mSmin').value = pre.servo_min_us;
+  el('mScenter').value = pre.servo_center_us;
+  el('mSmax').value = pre.servo_max_us;
+  el('mMsg').textContent = pre.name + ' preset loaded — press Save to apply';
+});
+
+/* Manual edits to preset-managed fields switch the profile to Custom.
+ * The preset fill above sets .value directly, so it does not fire these. */
+const flipToCustom = () => { el('mProfile').value = 3; };
+['mGain', 'mDeadband', 'mTrim', 'mSmin', 'mScenter', 'mSmax'].forEach(id => {
+  el(id).addEventListener('input', flipToCustom);
+});
+el('mMode').addEventListener('change', flipToCustom);
+
+/* LED controls apply + save immediately */
+el('mLedsOn').addEventListener('change', saveCfg);
+el('mLedsColor').addEventListener('input', () => { el('vLedsColor').textContent = el('mLedsColor').value; });
+el('mLedsColor').addEventListener('change', saveCfg);
 
 el('btnSave').onclick = saveCfg;
 el('btnLoad').onclick = loadCfg;

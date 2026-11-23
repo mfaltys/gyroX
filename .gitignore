@@ -5,3 +5,6 @@ build_cmd.bat
 .clangd
 .vscode
 build/
+build.bat
+AGENTS.md
+CLAUDE.md

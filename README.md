@@ -24,6 +24,9 @@ MPU-6050 (I2C) ─┘        (gyro mixing)
   - **Rate:** steering correction proportional to yaw rate (deg/s)
   - **Heading hold:** holds a heading (target captured with "Reset heading-hold target")
 - Adjustable gain, axis reversing, deadband, trim, servo min/center/max (µs)
+- Tuning profiles — General / Drift / Bashing / Custom — one tap in the web UI
+- Advanced sensor settings: gyro DLPF bandwidth and full-scale range, applied live
+- 3× WS2812B LED rail (XIAO D6): on/off + color from the web UI, saved in NVS
 - Web UI at `http://192.168.4.1/` while in AP mode; captive portal DNS included
 - All settings saved in NVS and survive reboots
 - 100 Hz control loop
@@ -45,6 +48,7 @@ Wire by the **silkscreen name**:
 | **D4** | GPIO 6 | I2C SCL | MPU-6050 SCL |
 | **D8** | GPIO 8 | Servo signal | Servo signal wire (usually white/orange) |
 | **D10** | GPIO 10 | PWM input | ELRS receiver steering-channel signal |
+| **D6** | GPIO 21 | WS2812B data | 3-LED rail data-in (first LED's DIN) |
 | GND | — | Common ground | MPU-6050 GND, servo GND, receiver GND |
 | 5V / 3V3 | — | Power | MPU-6050 VCC (3V3 recommended) |
 
@@ -68,6 +72,10 @@ pull-ups to VCC, so feeding them 5 V puts 5 V on the ESP32-C3 I2C pins, which ar
 5 V tolerant. Most modules include I2C pull-ups; if yours doesn't, the firmware's
 internal pull-ups usually suffice at 100 kHz.
 
+**LED rail:** 3× WS2812B on **D6 (GPIO 21)** — data into the first LED's DIN, powered
+from 3V3 with common GND. Full white on all three draws ~150–200 mA; prefer medium
+colors, or feed the rail from an external supply (common ground still required).
+
 > GPIO pins are compile-time defaults in `main/config.h` — change them there and rebuild
 > if you want a different layout. All *tuning* values (gain, mode, trim, servo limits…)
 > are stored in NVS and editable over the web UI. The boot button (GPIO 9) is not
@@ -85,8 +93,10 @@ internal pull-ups usually suffice at 100 kHz.
    ~3 seconds** (any time after power-up).
    - The XIAO starts an open AP: SSID `ESP32-DRIFT`, address `192.168.4.1`.
    - Connect your phone/laptop, open `http://192.168.4.1/`.
-   - Adjust gyro gain/mode/reversing, steering deadband/trim, servo limits, calibrate
-     the gyro, reset the heading-hold target, and click **Save** (writes NVS).
+   - Pick a tuning profile (General / Drift / Bashing / Custom), adjust gyro
+     gain/mode/reversing, steering deadband/trim, servo limits, the advanced sensor
+     settings, calibrate the gyro, reset the heading-hold target, control the LED
+     rail, and click **Save** (writes NVS).
    - The mixer keeps running the whole time — you can tune the car live.
    - **Power cycle the car** → AP comes back up only if you hold the boot button again.
 
@@ -105,30 +115,14 @@ internal pull-ups usually suffice at 100 kHz.
 | servo_max_us | Servo pulse at +100 % | 2500 |
 | hold_p | Heading-hold P, ×0.1 (°/s per °) | 40 |
 | gyro_z_offset | Stored gyro zero-rate offset (°/s) | calibrated |
+| gyro_dlpf | Gyro low-pass bandwidth (Hz) | 21 |
+| gyro_fs | Gyro full-scale range (°/s) | 1000 |
+| profile | 0 general, 1 drift, 2 bashing, 3 custom | 0 |
+| leds_on | LED rail power | 0 |
+| leds_color | LED rail color, 0xRRGGBB | 0xFF0000 |
 | web_ap_ssid | AP SSID in web UI mode | ESP32-DRIFT |
 
 ## Build & flash
-
-Requirements: ESP-IDF 6.0.1 (unpacked at `C:\esp\v6.0.1\esp-idf` here) and the IDF
-Python dependencies installed in an IDF environment (e.g. the `idf6.0.1_env` venv
-created under `C:\Users\mfaltys\.espressif\python_env\`).
-
-```cmd
-:: from the project root
-set IDF_PATH=C:\esp\v6.0.1\esp-idf
-
-:: pick the target (sdkconfig.defaults already selects esp32c3)
-idf.py set-target esp32c3
-
-:: build
-idf.py build
-
-:: flash (adjust -p to your COM port)
-idf.py -p COM3 flash
-
-:: watch logs
-idf.py -p COM3 monitor
-```
 
 The XIAO ESP32C3 uses its native USB-Serial-JTAG for flashing — Windows should present
 a COM port automatically.
@@ -148,6 +142,7 @@ esp32-drift/
 │   ├── gyro.h / gyro.c     # MPU-6050 driver + heading integration
 │   ├── pwm_in.h / pwm_in.c # ELRS PWM input decode (GPIO ISR)
 │   ├── servo.h / servo.c   # LEDC servo output
+│   ├── leds.h / leds.c     # WS2812B rail (RMT) — on/off + color
 │   ├── mixing.h / mixing.c # rx + gyro mixing + failsafe
 │   ├── web.h / web.c       # softAP + captive DNS + HTTP settings API
 │   ├── web/index.html      # web UI (embedded at build time)

@@ -18,13 +18,38 @@ static const char *TAG = "GYRO";
 #define REG_ACCEL_CONFIG 0x1C  /* +/- 2 g */
 #define REG_ACCEL_XOUT_H 0x3B
 
-/* Sensitivity: +/- 250 deg/s -> 131 LSB per deg/s; +/- 2 g -> 16384 LSB per g */
-#define GYRO_LSB_PER_DEG 131.0f
+/* +/- 2 g -> 16384 LSB per g. Gyro sensitivity is derived at runtime from the
+ * configured full-scale range (s_cfg.gyro_fs), see s_lsb_per_deg below. */
 #define ACCEL_LSB_PER_G 16384.0f
+
+/* Register encodings for the user-selectable advanced sensor settings */
+static const struct { int hz; uint8_t code; } s_dlpf_map[] = {
+    { 5, 0x06 }, { 10, 0x05 }, { 21, 0x04 }, { 44, 0x03 },
+};
+static const struct { int fs; uint8_t code; } s_fs_map[] = {
+    { 250, 0x00 }, { 500, 0x08 }, { 1000, 0x10 }, { 2000, 0x18 },
+};
+
+static uint8_t dlpf_code(int hz)
+{
+    for (size_t i = 0; i < sizeof(s_dlpf_map) / sizeof(s_dlpf_map[0]); i++) {
+        if (s_dlpf_map[i].hz == hz) return s_dlpf_map[i].code;
+    }
+    return 0x06;
+}
+
+static uint8_t fs_code(int fs)
+{
+    for (size_t i = 0; i < sizeof(s_fs_map) / sizeof(s_fs_map[0]); i++) {
+        if (s_fs_map[i].fs == fs) return s_fs_map[i].code;
+    }
+    return 0x00;
+}
 
 static i2c_port_t s_i2c_port = MPU6050_I2C_PORT;
 static uint8_t s_addr = MPU6050_ADDR;   /* runtime-selected (0x68 or 0x69) */
 static bool s_gyro_present = false;
+static float s_lsb_per_deg = 131.0f;    /* recomputed from s_cfg.gyro_fs at init */
 static float s_gx_off = 0.0f, s_gy_off = 0.0f, s_gz_off = 0.0f;
 static float s_heading = 0.0f;
 static int64_t s_last_read_us = 0;
@@ -148,9 +173,8 @@ esp_err_t gyro_init(void)
 
     i2c_write_reg(REG_PWR_MGMT_1, 0x00);           /* wake up, internal 8 MHz clock */
     vTaskDelay(pdMS_TO_TICKS(10));
-    i2c_write_reg(REG_CONFIG, 0x06);               /* DLPF ~5 Hz */
-    i2c_write_reg(REG_GYRO_CONFIG, 0x00);          /* +/- 250 deg/s */
     i2c_write_reg(REG_ACCEL_CONFIG, 0x00);         /* +/- 2 g */
+    gyro_apply_sensor_config();                    /* DLPF + range from s_cfg */
     vTaskDelay(pdMS_TO_TICKS(20));
 
     /* Restore the zero-rate offset saved in NVS (config_load() already ran).
@@ -161,6 +185,18 @@ esp_err_t gyro_init(void)
     s_last_read_us = esp_timer_get_time();
     ESP_LOGI(TAG, "MPU-6050 found at 0x%02X (restored offset z=%.3f deg/s)", s_addr, s_gz_off);
     return ESP_OK;
+}
+
+void gyro_apply_sensor_config(void)
+{
+    if (!s_gyro_present) {
+        return;
+    }
+    i2c_write_reg(REG_CONFIG, dlpf_code((int)s_cfg.gyro_dlpf));
+    i2c_write_reg(REG_GYRO_CONFIG, fs_code((int)s_cfg.gyro_fs));
+    s_lsb_per_deg = 32768.0f / (float)s_cfg.gyro_fs;
+    ESP_LOGI(TAG, "Sensor config: DLPF %d Hz, range +/-%d deg/s (%.1f LSB/deg/s)",
+             (int)s_cfg.gyro_dlpf, (int)s_cfg.gyro_fs, s_lsb_per_deg);
 }
 
 static int16_t s16(const uint8_t *p) { return (int16_t)((p[0] << 8) | p[1]); }
@@ -189,9 +225,9 @@ esp_err_t gyro_read(gyro_reading_t *out)
     out->az = s16(buf + 4) / ACCEL_LSB_PER_G;
     out->temp_c = s16(buf + 6) / 340.0f + 36.53f;
 
-    out->gx = s16(buf + 8) / GYRO_LSB_PER_DEG - s_gx_off;
-    out->gy = s16(buf + 10) / GYRO_LSB_PER_DEG - s_gy_off;
-    out->gz = s16(buf + 12) / GYRO_LSB_PER_DEG - s_gz_off;
+    out->gx = s16(buf + 8) / s_lsb_per_deg - s_gx_off;
+    out->gy = s16(buf + 10) / s_lsb_per_deg - s_gy_off;
+    out->gz = s16(buf + 12) / s_lsb_per_deg - s_gz_off;
     out->rate_z = out->gz;
 
     /* Integrate yaw heading from gyro z (car is assumed flat on the ground) */
@@ -215,9 +251,9 @@ esp_err_t gyro_calibrate(int samples)
     for (int i = 0; i < samples; i++) {
         uint8_t buf[14];
         if (i2c_read_regs(REG_ACCEL_XOUT_H, buf, 14) == ESP_OK) {
-            gx += s16(buf + 8) / GYRO_LSB_PER_DEG;
-            gy += s16(buf + 10) / GYRO_LSB_PER_DEG;
-            gz += s16(buf + 12) / GYRO_LSB_PER_DEG;
+            gx += s16(buf + 8) / s_lsb_per_deg;
+            gy += s16(buf + 10) / s_lsb_per_deg;
+            gz += s16(buf + 12) / s_lsb_per_deg;
         }
         vTaskDelay(pdMS_TO_TICKS(1));
     }

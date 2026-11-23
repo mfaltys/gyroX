@@ -15,7 +15,8 @@ typedef struct {
     bool ready;         /* true once MPU-6050 responded */
 } gyro_reading_t;
 
-esp_err_t gyro_init(void);                  /* wake up MPU-6050, configure DLPF */
+esp_err_t gyro_init(void);                  /* wake up MPU-6050, configure DLPF + range */
+void gyro_apply_sensor_config(void);        /* (re)write DLPF + full-scale from s_cfg */
 esp_err_t gyro_read(gyro_reading_t *out);   /* read + filter + integrate heading */
 esp_err_t gyro_calibrate(int samples);      /* keep car still; stores zero-rate offset */
 void gyro_reset_heading(float heading);

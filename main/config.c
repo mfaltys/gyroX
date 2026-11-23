@@ -60,6 +60,16 @@ esp_err_t config_load(void)
     s_cfg.servo_max_us = v;
     if (nvs_get_i32(handle, CFG_HEADING_HOLD_P, &v) != ESP_OK) { v = DEF_HEADING_HOLD_P; dirty = true; }
     s_cfg.hold_p = v;
+    if (nvs_get_i32(handle, CFG_GYRO_DLPF, &v) != ESP_OK) { v = DEF_GYRO_DLPF; dirty = true; }
+    s_cfg.gyro_dlpf = v;
+    if (nvs_get_i32(handle, CFG_GYRO_FS, &v) != ESP_OK) { v = DEF_GYRO_FS; dirty = true; }
+    s_cfg.gyro_fs = v;
+    if (nvs_get_i32(handle, CFG_PROFILE, &v) != ESP_OK) { v = DEF_PROFILE; dirty = true; }
+    s_cfg.profile = v;
+    if (nvs_get_i32(handle, CFG_LEDS_ON, &v) != ESP_OK) { v = DEF_LEDS_ON; dirty = true; }
+    s_cfg.leds_on = v;
+    if (nvs_get_i32(handle, CFG_LEDS_COLOR, &v) != ESP_OK) { v = DEF_LEDS_COLOR; dirty = true; }
+    s_cfg.leds_color = (uint32_t)v;
 
     sz = sizeof(s_cfg.gyro_z_offset);
     if (nvs_get_blob(handle, CFG_GYRO_Z_OFFSET, &s_cfg.gyro_z_offset, &sz) != ESP_OK) {
@@ -87,6 +97,11 @@ esp_err_t config_load(void)
         nvs_set_i32(handle, CFG_SERVO_CENTER_US, s_cfg.servo_center_us);
         nvs_set_i32(handle, CFG_SERVO_MAX_US, s_cfg.servo_max_us);
         nvs_set_i32(handle, CFG_HEADING_HOLD_P, s_cfg.hold_p);
+        nvs_set_i32(handle, CFG_GYRO_DLPF, s_cfg.gyro_dlpf);
+        nvs_set_i32(handle, CFG_GYRO_FS, s_cfg.gyro_fs);
+        nvs_set_i32(handle, CFG_PROFILE, s_cfg.profile);
+        nvs_set_i32(handle, CFG_LEDS_ON, s_cfg.leds_on);
+        nvs_set_i32(handle, CFG_LEDS_COLOR, (int32_t)s_cfg.leds_color);
         nvs_set_blob(handle, CFG_GYRO_Z_OFFSET, &s_cfg.gyro_z_offset, sizeof(s_cfg.gyro_z_offset));
         nvs_set_str(handle, CFG_WEB_AP_SSID, s_cfg.web_ap_ssid);
         nvs_commit(handle);
@@ -95,6 +110,9 @@ esp_err_t config_load(void)
     nvs_close(handle);
     ESP_LOGI(TAG, "Config loaded: gain=%" PRId32 " mode=%" PRId32 " center=%" PRId32 " us",
              s_cfg.gyro_gain, s_cfg.gyro_mode, s_cfg.servo_center_us);
+    ESP_LOGI(TAG, "Config: dlpf=%" PRId32 " Hz fs=%" PRId32 " deg/s profile=%" PRId32
+             " leds=%" PRId32 " color=0x%06" PRIX32,
+             s_cfg.gyro_dlpf, s_cfg.gyro_fs, s_cfg.profile, s_cfg.leds_on, s_cfg.leds_color);
     return ESP_OK;
 }
 
@@ -119,6 +137,11 @@ esp_err_t config_save(void)
     if (ret == ESP_OK) ret = nvs_set_i32(handle, CFG_SERVO_CENTER_US, s_cfg.servo_center_us);
     if (ret == ESP_OK) ret = nvs_set_i32(handle, CFG_SERVO_MAX_US, s_cfg.servo_max_us);
     if (ret == ESP_OK) ret = nvs_set_i32(handle, CFG_HEADING_HOLD_P, s_cfg.hold_p);
+    if (ret == ESP_OK) ret = nvs_set_i32(handle, CFG_GYRO_DLPF, s_cfg.gyro_dlpf);
+    if (ret == ESP_OK) ret = nvs_set_i32(handle, CFG_GYRO_FS, s_cfg.gyro_fs);
+    if (ret == ESP_OK) ret = nvs_set_i32(handle, CFG_PROFILE, s_cfg.profile);
+    if (ret == ESP_OK) ret = nvs_set_i32(handle, CFG_LEDS_ON, s_cfg.leds_on);
+    if (ret == ESP_OK) ret = nvs_set_i32(handle, CFG_LEDS_COLOR, (int32_t)s_cfg.leds_color);
     if (ret == ESP_OK) ret = nvs_set_blob(handle, CFG_GYRO_Z_OFFSET, &s_cfg.gyro_z_offset, sizeof(s_cfg.gyro_z_offset));
     if (ret == ESP_OK) ret = nvs_set_str(handle, CFG_WEB_AP_SSID, s_cfg.web_ap_ssid);
 
@@ -150,6 +173,11 @@ void config_apply_defaults(void)
     s_cfg.servo_max_us = DEF_SERVO_MAX_US;
     s_cfg.gyro_z_offset = 0.0f;
     s_cfg.hold_p = DEF_HEADING_HOLD_P;
+    s_cfg.gyro_dlpf = DEF_GYRO_DLPF;
+    s_cfg.gyro_fs = DEF_GYRO_FS;
+    s_cfg.profile = DEF_PROFILE;
+    s_cfg.leds_on = DEF_LEDS_ON;
+    s_cfg.leds_color = DEF_LEDS_COLOR;
     strncpy(s_cfg.web_ap_ssid, WEB_AP_SSID, sizeof(s_cfg.web_ap_ssid) - 1);
     s_cfg.web_ap_ssid[sizeof(s_cfg.web_ap_ssid) - 1] = '\0';
 }
@@ -184,6 +212,8 @@ esp_err_t config_set_from_json(cJSON *root)
     UPDATE_I32(CFG_SERVO_CENTER_US, servo_center_us, 100, 4000);
     UPDATE_I32(CFG_SERVO_MAX_US, servo_max_us, 100, 4000);
     UPDATE_I32(CFG_HEADING_HOLD_P, hold_p, 0, 500);
+    UPDATE_I32(CFG_PROFILE, profile, 0, 3);
+    UPDATE_I32(CFG_LEDS_ON, leds_on, 0, 1);
 
 #undef UPDATE_I32
 
@@ -191,6 +221,29 @@ esp_err_t config_set_from_json(cJSON *root)
     if (item && cJSON_IsNumber(item)) {
         float val = (float)item->valuedouble;
         if (s_cfg.gyro_z_offset != val) { s_cfg.gyro_z_offset = val; changed = true; }
+    }
+
+    /* Advanced sensor settings: only discrete valid values are accepted */
+    item = cJSON_GetObjectItem(root, CFG_GYRO_DLPF);
+    if (item && cJSON_IsNumber(item)) {
+        int32_t val = (int32_t)item->valueint;
+        if (val == 5 || val == 10 || val == 21 || val == 44) {
+            if (s_cfg.gyro_dlpf != val) { s_cfg.gyro_dlpf = val; changed = true; }
+        }
+    }
+    item = cJSON_GetObjectItem(root, CFG_GYRO_FS);
+    if (item && cJSON_IsNumber(item)) {
+        int32_t val = (int32_t)item->valueint;
+        if (val == 250 || val == 500 || val == 1000 || val == 2000) {
+            if (s_cfg.gyro_fs != val) { s_cfg.gyro_fs = val; changed = true; }
+        }
+    }
+    item = cJSON_GetObjectItem(root, CFG_LEDS_COLOR);
+    if (item && cJSON_IsNumber(item)) {
+        int32_t val = (int32_t)item->valueint;
+        if (val < 0) val = 0;
+        if (val > 0xFFFFFF) val = 0xFFFFFF;
+        if (s_cfg.leds_color != (uint32_t)val) { s_cfg.leds_color = (uint32_t)val; changed = true; }
     }
 
     item = cJSON_GetObjectItem(root, CFG_WEB_AP_SSID);

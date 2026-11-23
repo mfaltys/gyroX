@@ -19,6 +19,7 @@
 #include "servo.h"
 #include "mixing.h"
 #include "web.h"
+#include "leds.h"
 
 #include <driver/gpio.h>
 #include <esp_log.h>
@@ -87,6 +88,8 @@ void app_main(void)
     pwm_in_init(GPIO_PWM_IN);
     servo_init();
     mixing_init();
+
+    leds_init();   /* WS2812B rail: sets up RMT, applies saved on/off + color */
 
     xTaskCreate(mixing_task, "mixing", 3072, NULL, 6, NULL);
 
