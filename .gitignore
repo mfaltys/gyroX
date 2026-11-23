@@ -1,0 +1,7 @@
+*.swp
+nul
+status_cmd.bat
+build_cmd.bat
+.clangd
+.vscode
+build/
