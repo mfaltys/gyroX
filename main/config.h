@@ -1,11 +1,11 @@
-#ifndef DRIFT_CONFIG_H
-#define DRIFT_CONFIG_H
+#ifndef GYROX_CONFIG_H
+#define GYROX_CONFIG_H
 
 #include <driver/gpio.h>
 #include <cJSON.h>
 
 /*
- * esp32-drift — RC car gyro (Seeed XIAO ESP32C3 + MPU-6050)
+ * gyroX — RC car gyro (Seeed XIAO ESP32C3 + MPU-6050)
  *
  * The GPIO pins below are the suggested defaults (see README.md wiring), matched to
  * the XIAO silkscreen. Tuning values are stored in NVS and editable over the web UI;
@@ -30,7 +30,7 @@
 #define MPU6050_I2C_HZ    100000       /* 100 kHz - reliable with weak pull-ups     */
 
 /* --------------------------- NVS -------------------------- */
-#define NVS_NAMESPACE     "drift"
+#define NVS_NAMESPACE     "gyrox"
 
 /* ----------------- Servo output (LEDC, 50 Hz) -------------- */
 #define SERVO_FREQ_HZ         50
@@ -58,7 +58,7 @@
 /* ------------------- Web UI (AP mode) ------------------- */
 #define WEB_BTN_HOLD_MS   3000      /* hold BOOT button this long after boot  */
 #define WEB_BTN_POLL_MS   20        /* button task sampling period            */
-#define WEB_AP_SSID       "ESP32-DRIFT"
+#define WEB_AP_SSID       "gyroX"
 #define WEB_AP_PASSWORD   ""        /* open AP                                   */
 #define WEB_AP_CHANNEL    1
 #define WEB_AP_IP         "192.168.4.1"
@@ -127,9 +127,9 @@ typedef struct {
     uint32_t leds_color;     /* packed 0xRRGGBB */
     int32_t leds_bright;     /* 0..100 percent */
     char    web_ap_ssid[32];
-} drift_config_t;
+} gyrox_config_t;
 
-extern drift_config_t s_cfg;
+extern gyrox_config_t s_cfg;
 
 /* config.c */
 esp_err_t config_load(void);     /* load from NVS, write defaults on first boot */
@@ -137,4 +137,4 @@ esp_err_t config_save(void);     /* persist current s_cfg to NVS */
 esp_err_t config_set_from_json(cJSON *root);   /* apply + save fields from web UI */
 void config_apply_defaults(void);
 
-#endif /* DRIFT_CONFIG_H */
+#endif /* GYROX_CONFIG_H */

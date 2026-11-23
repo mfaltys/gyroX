@@ -1,4 +1,4 @@
-# esp32-drift — open-source RC car gyro
+# gyroX — open-source RC car gyro
 
 A tiny steering gyro for RC cars built around a **Seeed XIAO ESP32C3** and an **MPU-6050**.
 It sits **between your ELRS PWM receiver and the steering servo**, reads the receiver PWM,
@@ -92,7 +92,7 @@ colors, or feed the rail from an external supply (common ground still required).
 
 2. **Web UI mode:** power up normally, then **press and hold the boot button for
    ~3 seconds** (any time after power-up).
-   - The XIAO starts an open AP: SSID `ESP32-DRIFT`, address `192.168.4.1`.
+   - The XIAO starts an open AP: SSID `gyroX`, address `192.168.4.1`.
    - Connect your phone/laptop, open `http://192.168.4.1/`.
    - Pick a tuning profile (General / Drift / Bashing / Custom), adjust gyro
      gain/mode/reversing, steering deadband/trim, servo limits, the advanced sensor
@@ -122,7 +122,7 @@ colors, or feed the rail from an external supply (common ground still required).
 | leds_on | LED rail power | 0 |
 | leds_color | LED rail color, 0xRRGGBB | 0xFF0000 |
 | leds_bright | LED rail brightness, % | 100 |
-| web_ap_ssid | AP SSID in web UI mode | ESP32-DRIFT |
+| web_ap_ssid | AP SSID in web UI mode | gyroX |
 
 ## Build & flash
 
@@ -132,7 +132,7 @@ a COM port automatically.
 ## Project layout
 
 ```
-esp32-drift/
+gyroX/
 ├── CMakeLists.txt
 ├── sdkconfig.defaults      # ESP-IDF sdkconfig overrides (esp32c3, 4 MB, custom partitions)
 ├── partitions.csv          # NVS + dual OTA app slots (ota_0/ota_1) + otadata

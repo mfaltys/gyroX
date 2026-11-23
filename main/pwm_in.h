@@ -1,5 +1,5 @@
-#ifndef DRIFT_PWM_IN_H
-#define DRIFT_PWM_IN_H
+#ifndef GYROX_PWM_IN_H
+#define GYROX_PWM_IN_H
 
 #include <driver/gpio.h>
 #include <stdbool.h>
@@ -16,4 +16,4 @@ int32_t pwm_in_get_raw_us(void);
 /* True if a valid pulse arrived within PWM_LOST_TIMEOUT_MS */
 bool pwm_in_is_valid(void);
 
-#endif /* DRIFT_PWM_IN_H */
+#endif /* GYROX_PWM_IN_H */

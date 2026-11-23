@@ -1,5 +1,5 @@
-#ifndef DRIFT_GYRO_H
-#define DRIFT_GYRO_H
+#ifndef GYROX_GYRO_H
+#define GYROX_GYRO_H
 
 #include <driver/i2c.h>
 #include <esp_err.h>
@@ -23,4 +23,4 @@ void gyro_reset_heading(float heading);
 float gyro_get_heading(void);
 float gyro_get_rate_z(void);
 
-#endif /* DRIFT_GYRO_H */
+#endif /* GYROX_GYRO_H */

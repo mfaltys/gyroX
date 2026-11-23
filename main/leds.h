@@ -1,5 +1,5 @@
-#ifndef DRIFT_LEDS_H
-#define DRIFT_LEDS_H
+#ifndef GYROX_LEDS_H
+#define GYROX_LEDS_H
 
 /* WS2812B rail (LED_COUNT LEDs) on GPIO_LED_DATA, driven with the RMT
  * peripheral — no external components needed. State (on/off + color) comes
@@ -8,4 +8,4 @@
 void leds_init(void);
 void leds_apply(void);
 
-#endif /* DRIFT_LEDS_H */
+#endif /* GYROX_LEDS_H */

@@ -1,4 +1,4 @@
-/* esp32-drift — RC car gyro for Seeed XIAO ESP32C3 + MPU-6050
+/* gyroX — RC car gyro for Seeed XIAO ESP32C3 + MPU-6050
  *
  * Sits between an ELRS PWM receiver and the steering servo:
  *   RX PWM -> gyro correction -> servo PWM
@@ -26,7 +26,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
-static const char *TAG = "DRIFT";
+static const char *TAG = "GYROX";
 static volatile bool s_web_started = false;
 
 /* Web UI entry: the XIAO boot button pulls GPIO 9 to GND. GPIO 9 is a
@@ -67,7 +67,7 @@ static void mixing_task(void *arg)
 
 void app_main(void)
 {
-    ESP_LOGI(TAG, "esp32-drift starting (ESP-IDF target: esp32c3)");
+    ESP_LOGI(TAG, "gyroX starting (ESP-IDF target: esp32c3)");
 
     config_load();
 

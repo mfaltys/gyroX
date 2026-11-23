@@ -1,5 +1,5 @@
-#ifndef DRIFT_MIXING_H
-#define DRIFT_MIXING_H
+#ifndef GYROX_MIXING_H
+#define GYROX_MIXING_H
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -21,4 +21,4 @@ void mixing_update(void);          /* call ~100 Hz */
 const mixing_state_t *mixing_get_state(void);
 void mixing_reset_heading(void);  /* heading-hold: capture current heading as target */
 
-#endif /* DRIFT_MIXING_H */
+#endif /* GYROX_MIXING_H */

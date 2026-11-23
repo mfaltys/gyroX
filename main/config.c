@@ -9,7 +9,7 @@
 
 static const char *TAG = "CONFIG";
 
-drift_config_t s_cfg = {0};
+gyrox_config_t s_cfg = {0};
 
 static bool s_nvs_ready = false;
 

@@ -1,5 +1,5 @@
-#ifndef DRIFT_SERVO_H
-#define DRIFT_SERVO_H
+#ifndef GYROX_SERVO_H
+#define GYROX_SERVO_H
 
 #include <stdint.h>
 
@@ -15,4 +15,4 @@ void servo_set_pulse_us(int32_t us);
 /* Last commanded value -100..100 */
 int32_t servo_get_value(void);
 
-#endif /* DRIFT_SERVO_H */
+#endif /* GYROX_SERVO_H */
