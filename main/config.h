@@ -55,6 +55,14 @@
 #define DEF_GYRO_DLPF      21       /* DLPF bandwidth Hz: 5 / 10 / 21 / 44       */
 #define DEF_GYRO_FS        1000     /* full-scale deg/s: 250 / 500 / 1000 / 2000 */
 
+/* ----------------------- mDNS ----------------------- */
+/* Advertise the web UI as gyrox.local (and gyroX.local alias) so a client
+ * that has joined the gyroX AP can reach it by name instead of 192.168.4.1.
+ * This matters for OTA firmware uploads, which the captive portal blocks. */
+#define MDNS_HOSTNAME        "gyrox"      /* gyrox.local */
+#define MDNS_HOSTNAME_ALIAS  "gyroX"      /* gyroX.local alias */
+#define MDNS_INSTANCE_NAME   "gyroX"
+
 /* ------------------- Web UI (AP mode) ------------------- */
 #define WEB_BTN_HOLD_MS   3000      /* hold BOOT button this long after boot  */
 #define WEB_BTN_POLL_MS   20        /* button task sampling period            */

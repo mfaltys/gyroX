@@ -78,8 +78,8 @@ input:checked + .sl:after { transform: translateX(20px); }
 
 /* ---------- profile prominence (Drive page) ---------- */
 .profile-row { background: #162438; border: 1px solid var(--border); }
-.profile-label { font-size: 13px; color: var(--text); min-width: 105px; }
-.profile-select { font-size: 15px; font-weight: 700; padding: 8px 6px; }
+.profile-label { font-size: 16px; font-weight: 700; color: var(--text); min-width: 115px; }
+.profile-select { font-size: 16px; font-weight: 700; padding: 8px 6px; }
 
 /* ---------- collapsible sections ---------- */
 .sep { cursor: pointer; user-select: none; }

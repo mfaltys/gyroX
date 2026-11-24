@@ -7,6 +7,7 @@
 #include "leds.h"
 
 #include <string.h>
+#include <esp_err.h>
 #include <esp_log.h>
 #include <esp_wifi.h>
 #include <esp_event.h>
@@ -24,6 +25,7 @@
 #include <lwip/err.h>
 #include <lwip/netdb.h>
 #include <arpa/inet.h>
+#include <mdns.h>
 
 static const char *TAG = "WEB";
 
@@ -144,6 +146,50 @@ static void start_dns(void)
     xTaskCreate(dns_task, "dns", 3072, NULL, 5, &s_dns_task);
 }
 
+/* ---- mDNS: advertise the web UI as gyrox.local (+ gyroX.local alias) ---- */
+/* Mirrors the mDNS setup used in the scalex project. gyroX runs AP-only with a
+ * static AP IP, so the alias address is set once when the AP comes up. */
+static void mdns_update_alias_address(void)
+{
+    esp_netif_ip_info_t info;
+    esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
+    if (netif == NULL || esp_netif_get_ip_info(netif, &info) != ESP_OK || info.ip.addr == IPADDR_ANY) {
+        info.ip.addr = s_ap_ip.addr; /* fall back to the static AP address */
+    }
+
+    mdns_ip_addr_t addr = { 0 };
+    addr.addr.type = ESP_IPADDR_TYPE_V4;
+    addr.addr.u_addr.ip4 = info.ip;
+    addr.next = NULL;
+
+    esp_err_t err = mdns_delegate_hostname_set_address(MDNS_HOSTNAME_ALIAS, &addr);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "mDNS alias %s.local -> " IPSTR, MDNS_HOSTNAME_ALIAS, IP2STR(&info.ip));
+    } else {
+        ESP_LOGW(TAG, "Failed to set mDNS alias %s.local: %s", MDNS_HOSTNAME_ALIAS, esp_err_to_name(err));
+    }
+}
+
+static void mdns_start(void)
+{
+    if (mdns_init() != ESP_OK) {
+        ESP_LOGE(TAG, "mDNS init failed");
+        return;
+    }
+    mdns_hostname_set(MDNS_HOSTNAME);
+    mdns_instance_name_set(MDNS_INSTANCE_NAME);
+    mdns_service_add(MDNS_INSTANCE_NAME, "_http", "_tcp", 80, NULL, 0);
+
+    if (mdns_delegate_hostname_add(MDNS_HOSTNAME_ALIAS, NULL) == ESP_OK) {
+        mdns_update_alias_address();
+        ESP_LOGI(TAG, "mDNS ready at %s.local and %s.local", MDNS_HOSTNAME, MDNS_HOSTNAME_ALIAS);
+    } else {
+        ESP_LOGW(TAG, "mDNS alias %s.local unavailable: %s.local only",
+                 MDNS_HOSTNAME_ALIAS, MDNS_HOSTNAME);
+        ESP_LOGI(TAG, "mDNS ready at %s.local", MDNS_HOSTNAME);
+    }
+}
+
 static esp_err_t wifi_ap_start(void)
 {
     ESP_ERROR_CHECK(esp_netif_init());
@@ -178,6 +224,7 @@ static esp_err_t wifi_ap_start(void)
     esp_netif_dhcps_start(ap_netif);
 
     start_dns();
+    mdns_start();
     ESP_LOGI(TAG, "AP '%s' up at " IPSTR, s_cfg.web_ap_ssid, IP2STR(&s_ap_ip));
     return ESP_OK;
 }
