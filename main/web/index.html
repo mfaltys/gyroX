@@ -24,9 +24,9 @@
   <div class="tabpanels">
 
     <section class="tabpanel active" id="tab-drive" role="tabpanel">
-      <div class="row">
-        <label>Profile</label>
-        <select id="mProfile">
+      <div class="row profile-row">
+        <label class="profile-label">Profile</label>
+        <select id="mProfile" class="profile-select">
           <option value="0">General</option>
           <option value="1">Drift</option>
           <option value="2">Bashing</option>
@@ -49,32 +49,40 @@
         <label>Gyro reversed</label>
         <label class="switch"><input type="checkbox" id="mGyroRev"><span class="sl"></span></label>
       </div>
-      <div class="row"><button id="btnResetHead" class="btn-full">Reset heading-hold target</button></div>
+      <div class="row" id="rowResetHead" style="display:none"><button id="btnResetHead" class="btn-full">Reset heading-hold target</button></div>
 
-      <div class="sep">Steering</div>
-      <div class="row">
-        <label>Steering reversed</label>
-        <label class="switch"><input type="checkbox" id="mSteerRev"><span class="sl"></span></label>
-      </div>
-      <div class="row">
-        <label>Deadband</label>
-        <input type="range" id="mDeadband" min="0" max="50">
-        <span id="vDeadband" class="vnum">8</span><span class="vunit">%</span>
-      </div>
-      <div class="row">
-        <label>Trim</label>
-        <input type="range" id="mTrim" min="-100" max="100">
-        <span id="vTrim" class="vnum">0</span><span class="vunit">%</span>
+      <div class="collapsible">
+        <div class="sep" data-collapse="steering">Steering <span class="chev">▸</span></div>
+        <div class="collapse-content" id="collapse-steering">
+          <div class="row">
+            <label>Steering reversed</label>
+            <label class="switch"><input type="checkbox" id="mSteerRev"><span class="sl"></span></label>
+          </div>
+          <div class="row">
+            <label>Deadband</label>
+            <input type="range" id="mDeadband" min="0" max="50">
+            <span id="vDeadband" class="vnum">8</span><span class="vunit">%</span>
+          </div>
+          <div class="row">
+            <label>Trim</label>
+            <input type="range" id="mTrim" min="-100" max="100">
+            <span id="vTrim" class="vnum">0</span><span class="vunit">%</span>
+          </div>
+        </div>
       </div>
 
-      <div class="sep">Servo (µs)</div>
-      <div class="row"><label>Min</label><input type="number" id="mSmin" min="100" max="4000"></div>
-      <div class="row"><label>Center</label><input type="number" id="mScenter" min="100" max="4000"></div>
-      <div class="row"><label>Max</label><input type="number" id="mSmax" min="100" max="4000"></div>
+      <div class="collapsible">
+        <div class="sep" data-collapse="servo">Servo (µs) <span class="chev">▸</span></div>
+        <div class="collapse-content" id="collapse-servo">
+          <div class="row"><label>Min</label><input type="number" id="mSmin" min="100" max="4000"></div>
+          <div class="row"><label>Center</label><input type="number" id="mScenter" min="100" max="4000"></div>
+          <div class="row"><label>Max</label><input type="number" id="mSmax" min="100" max="4000"></div>
+        </div>
+      </div>
 
       <div class="row act">
         <button id="btnCal" class="btn-full">Calibrate gyro (car still!)</button>
-        <button id="btnSave" class="btn-full btn-save">Save to NVS</button>
+        <button id="btnSave" class="btn-full btn-save">Save to device</button>
         <button id="btnLoad" class="btn-full">Reload</button>
       </div>
       <div id="mMsg" class="msg"></div>
@@ -94,7 +102,6 @@
         <input type="range" id="mLedsBright" min="0" max="100">
         <span id="vBright" class="vnum">100</span><span class="vunit">%</span>
       </div>
-      <div class="msg">3× WS2812B on XIAO D6 — applies and saves immediately.</div>
     </section>
 
     <section class="tabpanel" id="tab-advanced" role="tabpanel">
@@ -158,6 +165,7 @@ function applyCfg(c){
   el('mDlpf').value = c.gyro_dlpf;
   el('mFs').value = c.gyro_fs;
   el('mProfile').value = (c.profile === undefined ? 0 : c.profile);
+  el('rowResetHead').style.display = (c.gyro_mode === 1) ? '' : 'none';
   el('mLedsOn').checked = c.leds_on === 1;
   const hexc = '#' + Number(c.leds_color || 0).toString(16).padStart(6, '0');
   el('mLedsColor').value = hexc;
@@ -232,11 +240,13 @@ const PRESETS = {
   2: { name: 'Bashing', gyro_mode: 0, gyro_gain: 120, steer_deadband: 7, steer_trim: 0, servo_min_us: 500, servo_center_us: 1500, servo_max_us: 2500 },
 };
 el('mProfile').addEventListener('change', () => {
+  el('profilePill').textContent = el('mProfile').selectedOptions[0].textContent;
   const p = Number(el('mProfile').value);
   if (p === 3) return;
   const pre = PRESETS[p];
   if (!pre) return;
   el('mMode').value = pre.gyro_mode;
+  el('rowResetHead').style.display = pre.gyro_mode === 1 ? '' : 'none';
   el('mGain').value = pre.gyro_gain;
   el('vGain').textContent = (pre.gyro_gain / 10).toFixed(1);
   el('mDeadband').value = pre.steer_deadband;
@@ -252,7 +262,20 @@ const flipToCustom = () => { el('mProfile').value = 3; };
 ['mGain', 'mDeadband', 'mTrim', 'mSmin', 'mScenter', 'mSmax'].forEach(id => {
   el(id).addEventListener('input', flipToCustom);
 });
-el('mMode').addEventListener('change', flipToCustom);
+el('mMode').addEventListener('change', () => {
+  el('rowResetHead').style.display = el('mMode').value === '1' ? '' : 'none';
+  flipToCustom();
+});
+
+/* collapsible sections (Steering / Servo) — start collapsed */
+document.querySelectorAll('.sep[data-collapse]').forEach(sep => {
+  sep.addEventListener('click', () => {
+    const open = sep.classList.toggle('open');
+    el('collapse-' + sep.dataset.collapse).classList.toggle('open', open);
+    sep.querySelector('.chev').textContent = open ? '▾' : '▸';
+  });
+});
+
 const tabs = document.querySelectorAll('.tab');
 const panels = document.querySelectorAll('.tabpanel');
 tabs.forEach(t => {

@@ -1,4 +1,4 @@
-# gyroX — open-source RC car gyro
+# gyroX - open-source RC car gyro
 
 A tiny steering gyro for RC cars built around a **Seeed XIAO ESP32C3** and an **MPU-6050**.
 It sits **between your ELRS PWM receiver and the steering servo**, reads the receiver PWM,

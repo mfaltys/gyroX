@@ -75,3 +75,15 @@ input:checked + .sl:after { transform: translateX(20px); }
 .tel-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.3px; }
 .tel-val { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
 .tel-unit { font-size: 10px; color: var(--muted); }
+
+/* ---------- profile prominence (Drive page) ---------- */
+.profile-row { background: #162438; border: 1px solid var(--border); }
+.profile-label { font-size: 13px; color: var(--text); min-width: 105px; }
+.profile-select { font-size: 15px; font-weight: 700; padding: 8px 6px; }
+
+/* ---------- collapsible sections ---------- */
+.sep { cursor: pointer; user-select: none; }
+.sep .chev { display: inline-block; width: 14px; text-align: center; margin-left: 10px; font-size: 11px; opacity: 0.6; transition: transform 0.2s ease; }
+.sep.open .chev { transform: rotate(90deg); }
+.collapse-content { max-height: 0; overflow: hidden; opacity: 0; transition: max-height 0.25s ease, opacity 0.2s ease; }
+.collapse-content.open { max-height: 1000px; opacity: 1; }
