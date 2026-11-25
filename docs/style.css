@@ -95,19 +95,15 @@ input:checked + .sl:after { transform: translateX(20px); }
 .profile-label { font-size: 16px; font-weight: 700; color: var(--text); min-width: 115px; }
 .profile-select { font-size: 16px; font-weight: 700; padding: 8px 6px; }
 
-/* ---------- collapsible sections: large tappable headers ---------- */
+/* ---------- collapsible sections ---------- */
 .sep[data-collapse] {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
   font-size: 14px; font-weight: 700; color: var(--text); text-transform: uppercase; letter-spacing: 0.5px;
-  margin: 16px 0 8px; padding: 12px 14px;
-  background: #162438; border: 1px solid var(--border); border-radius: 10px;
-  border-left: none;
+  margin: 14px 0 8px; padding: 10px 12px;
+  background: #162438; border-radius: 8px;
   cursor: pointer; user-select: none;
 }
 .sep[data-collapse]:hover { background: #1b2c44; }
-.sep[data-collapse]:active { background: #20334e; }
-.sep[data-collapse].open { border-color: var(--accent); }
-.sep[data-collapse] .chev { display: inline-block; font-size: 13px; opacity: 0.7; transition: transform 0.2s ease; }
+.sep[data-collapse] .chev { display: inline-block; width: 16px; text-align: center; margin-left: 10px; font-size: 12px; opacity: 0.7; transition: transform 0.2s ease; }
 .sep[data-collapse].open .chev { transform: rotate(90deg); opacity: 1; }
 .collapse-content { max-height: 0; overflow: hidden; opacity: 0; transition: max-height 0.25s ease, opacity 0.2s ease; }
 .collapse-content.open { max-height: 2400px; opacity: 1; }
