@@ -151,9 +151,11 @@ static int chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
 
     case BLE_GATT_ACCESS_OP_WRITE_CHR: {
         uint8_t buf[512];
-        uint16_t len = ctxt->om->om_len;
+        /* Use the full packet length, not om_len (a large write may span
+         * multiple mbufs in the chain), then copy across the chain. */
+        uint16_t len = OS_MBUF_PKTLEN(ctxt->om);
         if (len == 0 || len >= sizeof(buf)) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
-        memcpy(buf, ctxt->om->om_data, len);
+        os_mbuf_copydata(ctxt->om, 0, len, buf);
         buf[len] = '\0';
 
         if (chr_id == 2) { /* CONFIG — JSON command */
@@ -479,10 +481,18 @@ static void ble_advertise(void)
 
     ble_gap_adv_set_fields(&adv_fields);
 
-    /* Callback is passed directly to ble_gap_adv_start() */
+    /* CRITICAL: {0} params default to BLE_GAP_CONN_MODE_NON (visible in scans
+     * but connection requests are ignored at the controller!). Must be
+     * connectable-undirected + general-discoverable for Web Bluetooth. */
+    adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
+    adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
+    adv_params.itvl_min = 0x0020;   /* 20 ms  (units of 0.625 ms) */
+    adv_params.itvl_max = 0x0040;   /* 40 ms */
+
+    /* GAP event callback is passed directly to ble_gap_adv_start() */
     ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, NULL, BLE_HS_FOREVER, &adv_params,
                       gap_event_cb, NULL);
-    ESP_LOGI(TAG, "Advertising as '%s' with service UUID", name);
+    ESP_LOGI(TAG, "Advertising as '%s' (connectable)", name);
 }
 
 /* ------------------------------------------------------------------ */
