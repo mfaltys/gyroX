@@ -31,6 +31,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/semphr.h>
+#include <freertos/queue.h>
 #include <nimble/nimble_port.h>
 #include <host/ble_hs.h>
 #include <host/ble_hs_adv.h>
@@ -95,13 +96,63 @@ static struct {
 /* Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
-static void notify_json(uint16_t conn_handle, uint16_t attr_handle, const char *json)
+/* ---- Deferred notifications --------------------------------------- */
+/* The response notification must reach the client AFTER the ATT write
+ * response, or Chrome's single-slot GATT operation queue wedges: the
+ * writeValue() promise never settles (the write response is lost when the
+ * notification races it) and every later GATT op fails with "operation
+ * already in progress". The access callback therefore only enqueues the
+ * reply here; a worker task sends it a few ms later, once the write
+ * response is safely out. */
+
+typedef struct {
+    uint16_t conn;
+    uint16_t attr;
+    char    *json;   /* owned by the worker — freed after send */
+} ble_reply_t;
+
+static QueueHandle_t s_reply_queue;
+
+static char *dup_str(const char *s)
 {
-    struct os_mbuf *om = ble_hs_mbuf_from_flat(json, strlen(json));
-    if (om) {
-        ble_gatts_notify_custom(conn_handle, attr_handle, om);
+    size_t n = strlen(s) + 1;
+    char *p = malloc(n);
+    if (p) memcpy(p, s, n);
+    return p;
+}
+
+static void reply_task(void *arg)
+{
+    (void)arg;
+    ble_reply_t r;
+    while (1) {
+        if (xQueueReceive(s_reply_queue, &r, portMAX_DELAY) != pdTRUE) continue;
+        /* Small defer so the ATT write response is emitted first. */
+        vTaskDelay(pdMS_TO_TICKS(10));
+        struct os_mbuf *om = ble_hs_mbuf_from_flat(r.json, strlen(r.json));
+        if (om) {
+            ble_gatts_notify_custom(r.conn, r.attr, om);
+        }
+        free(r.json);
     }
 }
+
+static void notify_json(uint16_t conn_handle, uint16_t attr_handle, const char *json)
+{
+    if (s_reply_queue == NULL) return;
+    ble_reply_t r = {
+        .conn = conn_handle,
+        .attr = attr_handle,
+        .json = dup_str(json),
+    };
+    if (r.json == NULL) return;
+    /* Non-blocking: a full queue drops the reply rather than stalling the
+     * NimBLE host task (which would stall the whole GATT server). */
+    if (xQueueSend(s_reply_queue, &r, 0) != pdTRUE) {
+        free(r.json);
+    }
+}
+
 static int chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
                          struct ble_gatt_access_ctxt *ctxt, void *arg)
 {
@@ -602,6 +653,16 @@ esp_err_t ble_start(void)
      * without these, notify_json() would target handle 0 and every JSON
      * response would be lost. */
     ble_hs_cfg.gatts_register_cb = gatt_register_cb;
+
+    /* Deferred reply worker (see notify_json) */
+    if (s_reply_queue == NULL) {
+        s_reply_queue = xQueueCreate(8, sizeof(ble_reply_t));
+        if (s_reply_queue == NULL) {
+            ESP_LOGE(TAG, "reply queue alloc failed");
+            return ESP_ERR_NO_MEM;
+        }
+        xTaskCreate(reply_task, "ble_reply", 3072, NULL, 5, NULL);
+    }
 
     /* Start the host task */
     xTaskCreate(ble_host_task, "nimble_host", 4096, NULL, 5, NULL);

@@ -53,7 +53,7 @@ function setStatus(text, cls) {
 /* -------- Command transport (JSON over CONFIG characteristic) ----- */
 /* Promise registered BEFORE the write so a fast response is never
  * missed. Responses arrive as notifications on 0xA102. */
-function sendCommand(cmd, timeoutMs, noRsp) {
+function sendCommand(cmd, timeoutMs) {
   if (!connected) return Promise.reject(new Error('Not connected'));
   const tmo = timeoutMs || 5000;
   return new Promise((resolve, reject) => {
@@ -62,11 +62,11 @@ function sendCommand(cmd, timeoutMs, noRsp) {
       try { resolve(JSON.parse(text)); }
       catch (e) { reject(new Error('Bad JSON from device')); }
     };
-    const payload = new TextEncoder().encode(JSON.stringify(cmd));
-    /* Polls use write-without-response: no ATT write response to wait on, so
-     * a wedge in the write-response path can't stall the telemetry loop. */
-    const p = noRsp ? chrCfg.writeValueWithoutResponse(payload)
-                    : chrCfg.writeValue(payload);
+    /* ALL JSON writes use write-without-response: there is no ATT write
+     * response to race or lose, so Chrome's single-slot GATT op queue can
+     * never wedge on a zombie write. The device's notification is the one
+     * completion signal; the timeout below is the backstop. */
+    const p = chrCfg.writeValueWithoutResponse(new TextEncoder().encode(JSON.stringify(cmd)));
     p.catch(e => { notifyResolve = null; reject(e); });
     setTimeout(() => {
       if (notifyResolve) { notifyResolve = null; reject(new Error('Device did not respond (timeout)')); }
@@ -417,7 +417,7 @@ async function otaUpload() {
 
 /* ---------------------- Telemetry polling ------------------------- */
 async function pollOnce() {
-  const s = await sendCommand({ cmd: 'get_state' }, 1500, true);
+  const s = await sendCommand({ cmd: 'get_state' }, 1500);
   el('rx').textContent = s.rx;
   el('rate').textContent = s.rate_z;
   el('heading').textContent = Number(s.heading).toFixed(1);
