@@ -47,7 +47,7 @@ body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-
 .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 10px 0; padding: 10px 4px; border-radius: 10px; }
 .row:hover { background: #19273c; }
 .row label { font-size: 13px; color: var(--text); min-width: 105px; }
-.sep { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin: 18px 0 8px; padding-left: 6px; border-left: 3px solid var(--accent); }
+.sep { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin: 18px 0 8px; padding-left: 6px; border-left: 3px solid var(--accent); }
 
 /* inputs */
 input[type=range] { flex: 1; accent-color: var(--accent); height: 24px; }
@@ -95,12 +95,22 @@ input:checked + .sl:after { transform: translateX(20px); }
 .profile-label { font-size: 16px; font-weight: 700; color: var(--text); min-width: 115px; }
 .profile-select { font-size: 16px; font-weight: 700; padding: 8px 6px; }
 
-/* ---------- collapsible sections ---------- */
-.sep { cursor: pointer; user-select: none; }
-.sep .chev { display: inline-block; width: 14px; text-align: center; margin-left: 10px; font-size: 11px; opacity: 0.6; transition: transform 0.2s ease; }
-.sep.open .chev { transform: rotate(90deg); }
+/* ---------- collapsible sections: large tappable headers ---------- */
+.sep[data-collapse] {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  font-size: 14px; font-weight: 700; color: var(--text); text-transform: uppercase; letter-spacing: 0.5px;
+  margin: 16px 0 8px; padding: 12px 14px;
+  background: #162438; border: 1px solid var(--border); border-radius: 10px;
+  border-left: none;
+  cursor: pointer; user-select: none;
+}
+.sep[data-collapse]:hover { background: #1b2c44; }
+.sep[data-collapse]:active { background: #20334e; }
+.sep[data-collapse].open { border-color: var(--accent); }
+.sep[data-collapse] .chev { display: inline-block; font-size: 13px; opacity: 0.7; transition: transform 0.2s ease; }
+.sep[data-collapse].open .chev { transform: rotate(90deg); opacity: 1; }
 .collapse-content { max-height: 0; overflow: hidden; opacity: 0; transition: max-height 0.25s ease, opacity 0.2s ease; }
-.collapse-content.open { max-height: 2000px; opacity: 1; }
+.collapse-content.open { max-height: 2400px; opacity: 1; }
 
 /* ---------- log (BLE diagnostics) ---------- */
 .log { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; color: var(--muted); background: #0b1016; border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; max-height: 180px; overflow-y: auto; }
