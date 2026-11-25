@@ -2,201 +2,158 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>gyroX Config — BLE</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>gyroX BLE</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<div class="shell">
+  <header class="bar">
+    <div class="brand">gyro<span class="dot">X</span></div>
+    <div id="ver" class="pill">BLE</div>
+    <button id="btnConn" class="btn-conn">Connect</button>
+  </header>
 
-<!-- Header / Connection -->
-<header class="bar">
-  <div class="bar-left">
-    <span id="conn-dot" class="dot"></span>
-    <span id="conn-status">Not connected</span>
-  </div>
-  <button id="btn-connect" class="btn btn-primary">Connect</button>
-</header>
+  <div id="status" class="msg">Not connected — tap Connect and pick gyroX.</div>
 
-<!-- Device Info -->
-<section class="card" id="device-info" style="display:none">
-  <h2>Device</h2>
-  <div class="row">
-    <label class="label">Model</label>
-    <span id="info-model" class="value">—</span>
-  </div>
-  <div class="row">
-    <label class="label">Firmware</label>
-    <span id="info-version" class="value">—</span>
-  </div>
-</section>
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-tab="drive" role="tab" aria-selected="true">Drive</button>
+    <button class="tab" data-tab="leds" role="tab" aria-selected="false">LEDs</button>
+    <button class="tab" data-tab="advanced" role="tab" aria-selected="false">Advanced</button>
+  </nav>
 
-<!-- Config -->
-<section class="card" id="config-section" style="display:none">
-  <h2>Configuration</h2>
+  <div class="tabpanels">
 
-  <div class="field">
-    <label class="field-label">Gyro gain</label>
-    <input type="number" id="f-gyro_gain" min="0" max="500" step="1">
-    <span class="field-unit">×0.1 % per 100°/s</span>
-  </div>
+    <section class="tabpanel active" id="tab-drive" role="tabpanel">
+      <div class="row profile-row">
+        <label class="profile-label">Profile</label>
+        <select id="mProfile" class="profile-select">
+          <option value="0">General</option>
+          <option value="1">Drift</option>
+          <option value="2">Bashing</option>
+          <option value="3">Custom</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>Mode</label>
+        <select id="mMode">
+          <option value="0">Rate</option>
+          <option value="1">Heading hold</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>Gain</label>
+        <input type="range" id="mGain" min="0" max="200">
+        <span id="vGain" class="vnum">8.0</span><span class="vunit">%</span>
+      </div>
+      <div class="row">
+        <label>Gyro reversed</label>
+        <label class="switch"><input type="checkbox" id="mGyroRev"><span class="sl"></span></label>
+      </div>
+      <div class="row" id="rowResetHead" style="display:none"><button id="btnResetHead" class="btn-full">Reset heading-hold target</button></div>
 
-  <div class="field">
-    <label class="field-label">Gyro mode</label>
-    <select id="f-gyro_mode">
-      <option value="0">Rate</option>
-      <option value="1">Heading hold</option>
-    </select>
-  </div>
+      <div class="collapsible">
+        <div class="sep" data-collapse="steering">Steering <span class="chev">▸</span></div>
+        <div class="collapse-content" id="collapse-steering">
+          <div class="row">
+            <label>Steering reversed</label>
+            <label class="switch"><input type="checkbox" id="mSteerRev"><span class="sl"></span></label>
+          </div>
+          <div class="row">
+            <label>Deadband</label>
+            <input type="range" id="mDeadband" min="0" max="50">
+            <span id="vDeadband" class="vnum">8</span><span class="vunit">%</span>
+          </div>
+          <div class="row">
+            <label>Trim</label>
+            <input type="range" id="mTrim" min="-100" max="100">
+            <span id="vTrim" class="vnum">0</span><span class="vunit">%</span>
+          </div>
+        </div>
+      </div>
 
-  <div class="field">
-    <label class="field-label">Gyro reverse</label>
-    <select id="f-gyro_reverse">
-      <option value="0">No</option>
-      <option value="1">Yes</option>
-    </select>
-  </div>
+      <div class="collapsible">
+        <div class="sep" data-collapse="servo">Servo (µs) <span class="chev">▸</span></div>
+        <div class="collapse-content" id="collapse-servo">
+          <div class="row"><label>Min</label><input type="number" id="mSmin" min="100" max="4000"></div>
+          <div class="row"><label>Center</label><input type="number" id="mScenter" min="100" max="4000"></div>
+          <div class="row"><label>Max</label><input type="number" id="mSmax" min="100" max="4000"></div>
+        </div>
+      </div>
 
-  <div class="field">
-    <label class="field-label">Steer reverse</label>
-    <select id="f-steer_reverse">
-      <option value="0">No</option>
-      <option value="1">Yes</option>
-    </select>
-  </div>
+      <div class="row act">
+        <button id="btnCal" class="btn-full">Calibrate gyro (car still!)</button>
+        <button id="btnSave" class="btn-full btn-save">Save to device</button>
+        <button id="btnLoad" class="btn-full">Reload</button>
+      </div>
+      <div id="mMsg" class="msg"></div>
+    </section>
 
-  <div class="field">
-    <label class="field-label">Steer deadband</label>
-    <input type="number" id="f-steer_deadband" min="0" max="50" step="1">
-    <span class="field-unit">%</span>
-  </div>
 
-  <div class="field">
-    <label class="field-label">Steer trim</label>
-    <input type="number" id="f-steer_trim" min="-100" max="100" step="1">
-    <span class="field-unit">%</span>
-  </div>
+    <section class="tabpanel" id="tab-leds" role="tabpanel">
+      <div class="row">
+        <label>Power</label>
+        <label class="switch"><input type="checkbox" id="mLedsOn"><span class="sl"></span></label>
+      </div>
+      <div class="row">
+        <label>Color</label>
+        <span class="colorrow"><input type="color" id="mLedsColor" value="#ff0000"><span id="vLedsColor" class="hex">#ff0000</span></span>
+      </div>
+      <div class="row">
+        <label>Brightness</label>
+        <input type="range" id="mLedsBright" min="0" max="100">
+        <span id="vBright" class="vnum">100</span><span class="vunit">%</span>
+      </div>
+    </section>
 
-  <div class="field">
-    <label class="field-label">Servo min (µs)</label>
-    <input type="number" id="f-servo_min_us" min="100" max="4000" step="10">
-  </div>
+    <section class="tabpanel" id="tab-advanced" role="tabpanel">
+      <div class="row">
+        <label>Gyro filter (DLPF)</label>
+        <select id="mDlpf">
+          <option value="5">5 Hz (smooth)</option>
+          <option value="10">10 Hz</option>
+          <option value="21">21 Hz (drift)</option>
+          <option value="44">44 Hz (snappy)</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>Gyro range</label>
+        <select id="mFs">
+          <option value="250">±250 °/s</option>
+          <option value="500">±500 °/s</option>
+          <option value="1000">±1000 °/s</option>
+          <option value="2000">±2000 °/s</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>Gyro zero offset (°/s)</label>
+        <input type="number" id="mGzoff" step="0.001">
+      </div>
+      <div class="msg">Applied on Save — no reboot needed.</div>
 
-  <div class="field">
-    <label class="field-label">Servo center (µs)</label>
-    <input type="number" id="f-servo_center_us" min="100" max="4000" step="10">
-  </div>
+      <div class="sep">Firmware update (OTA)</div>
+      <div class="row"><label>Firmware file (.bin)</label><input type="file" id="otaFile" accept=".bin"></div>
+      <div class="row"><button id="btnOta" class="btn-full" disabled>Upload & flash over BLE</button></div>
+      <div class="progress"><div class="fill" id="otaBar"></div></div>
+      <div id="otaMsg" class="msg"></div>
+    </section>
 
-  <div class="field">
-    <label class="field-label">Servo max (µs)</label>
-    <input type="number" id="f-servo_max_us" min="100" max="4000" step="10">
-  </div>
-
-  <div class="field">
-    <label class="field-label">Heading hold P</label>
-    <input type="number" id="f-hold_p" min="0" max="500" step="1">
-    <span class="field-unit">×0.1 °/s per °</span>
-  </div>
-
-  <div class="field">
-    <label class="field-label">Profile</label>
-    <select id="f-profile">
-      <option value="0">General</option>
-      <option value="1">Drift</option>
-      <option value="2">Bash</option>
-      <option value="3">Custom</option>
-    </select>
-  </div>
-
-  <div class="field">
-    <label class="field-label">LEDs</label>
-    <select id="f-leds_on">
-      <option value="0">Off</option>
-      <option value="1">On</option>
-    </select>
-  </div>
-
-  <div class="field">
-    <label class="field-label">LED brightness</label>
-    <input type="number" id="f-leds_bright" min="0" max="100" step="1">
-    <span class="field-unit">%</span>
-  </div>
-
-  <div class="field">
-    <label class="field-label">LED color</label>
-    <input type="color" id="f-leds_color">
-  </div>
-
-  <div class="field">
-    <label class="field-label">Gyro DLPF (Hz)</label>
-    <select id="f-gyro_dlpf">
-      <option value="5">5</option>
-      <option value="10">10</option>
-      <option value="21">21</option>
-      <option value="44">44</option>
-    </select>
-  </div>
-
-  <div class="field">
-    <label class="field-label">Gyro full scale (°/s)</label>
-    <select id="f-gyro_fs">
-      <option value="250">250</option>
-      <option value="500">500</option>
-      <option value="1000">1000</option>
-      <option value="2000">2000</option>
-    </select>
   </div>
 
-  <div class="field">
-    <label class="field-label">AP SSID</label>
-    <input type="text" id="f-web_ap_ssid" maxlength="31">
+  <div class="collapsible">
+    <div class="sep" data-collapse="log">Log <span class="chev">▸</span></div>
+    <div class="collapse-content" id="collapse-log">
+      <div id="log" class="log"></div>
+    </div>
   </div>
 
-  <div class="field actions">
-    <button id="btn-get-config" class="btn btn-outline">Read from device</button>
-    <button id="btn-save-config" class="btn btn-primary">Save to device</button>
+  <div class="telemetry">
+    <div class="tel-item"><div class="tel-label">RX</div><div class="tel-val" id="rx">—</div><div class="tel-unit">%</div></div>
+    <div class="tel-item"><div class="tel-label">Rate</div><div class="tel-val" id="rate">—</div><div class="tel-unit">°/s</div></div>
+    <div class="tel-item"><div class="tel-label">Heading</div><div class="tel-val" id="heading">—</div><div class="tel-unit">°</div></div>
+    <div class="tel-item"><div class="tel-label">Output</div><div class="tel-val" id="output">—</div><div class="tel-unit">%</div></div>
   </div>
-
-  <div class="field actions">
-    <button id="btn-calibrate" class="btn btn-outline">Calibrate gyro <span class="small">(keep still)</span></button>
-    <button id="btn-reset-heading" class="btn btn-outline">Reset heading</button>
-  </div>
-</section>
-
-<!-- OTA -->
-<section class="card" id="ota-section" style="display:none">
-  <h2>Firmware update (OTA)</h2>
-  <p class="hint">Upload a .bin file (e.g. from GitHub Releases). The device reboots after a successful flash.</p>
-
-  <div class="field">
-    <label class="field-label">Firmware file</label>
-    <input type="file" id="f-ota-file" accept=".bin">
-  </div>
-
-  <div class="field actions">
-    <button id="btn-ota-upload" class="btn btn-primary" disabled>Upload & flash</button>
-  </div>
-
-  <div id="ota-progress" style="display:none">
-    <div class="progress-bar"><div class="progress-fill"></div></div>
-    <div id="ota-pct" class="small">0%</div>
-    <div id="ota-msg" class="small muted"></div>
-  </div>
-</section>
-
-<!-- Actions -->
-<section class="card" id="actions-section" style="display:none">
-  <h2>Actions</h2>
-  <div class="field actions">
-    <button id="btn-disconnect" class="btn btn-danger">Disconnect</button>
-  </div>
-</section>
-
-<!-- Log -->
-<section class="card">
-  <h2>Log</h2>
-  <div id="log" class="log"></div>
-</section>
-
+</div>
 <script src="app.js"></script>
 </body>
 </html>

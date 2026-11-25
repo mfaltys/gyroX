@@ -1,415 +1,396 @@
-/* gyroX Config — Web Bluetooth client (mobile-first)
+/* gyroX Config — Web Bluetooth client, styled like the AP web UI.
  *
- * Talks to the gyroX BLE service:
- *   Service:  0000A100-0000-1000-8000-00805F9B34FB
+ * BLE service: 0000A100-0000-1000-8000-00805F9B34FB
  *   0xA101 DEVICE_INFO  READ
- *   0xA102 CONFIG       WRITE + NOTIFY   (JSON command/response)
- *   0xA103 OTA_CTRL     WRITE            (JSON begin/abort/complete)
- *   0xA104 OTA_DATA     WRITE_NO_RSP     (raw binary chunks)
+ *   0xA102 CONFIG       WRITE + NOTIFY  (JSON command/response)
+ *   0xA103 OTA_CTRL     WRITE           (JSON begin/abort/complete)
+ *   0xA104 OTA_DATA     WRITE_NO_RSP    (raw binary chunks)
  */
+'use strict';
 
-(function () {
-  'use strict';
+const SVC_UUID = '0000a100-0000-1000-8000-00805f9b34fb';
+const CHR_INFO = '0000a101-0000-1000-8000-00805f9b34fb';
+const CHR_CFG  = '0000a102-0000-1000-8000-00805f9b34fb';
+const CHR_OTAC = '0000a103-0000-1000-8000-00805f9b34fb';
+const CHR_OTAD = '0000a104-0000-1000-8000-00805f9b34fb';
 
-  /* ------------------------------------------------------------------ */
-  /* Constants                                                          */
-  /* ------------------------------------------------------------------ */
+const MTU_CHUNK   = 480;  // OTA data bytes per WRITE (device MTU is 517)
+const CHUNK_DELAY = 15;   // ms between OTA chunks (flow control)
 
-  const SVC_UUID   = '0000a100-0000-1000-8000-00805f9b34fb';
-  const CHR_INFO   = '0000a101-0000-1000-8000-00805f9b34fb';
-  const CHR_CFG    = '0000a102-0000-1000-8000-00805f9b34fb';
-  const CHR_OTAC   = '0000a103-0000-1000-8000-00805f9b34fb';
-  const CHR_OTAD   = '0000a104-0000-1000-8000-00805f9b34fb';
+function el(id) { return document.getElementById(id); }
 
-  const MTU_CHUNK  = 480;
-  const CHUNK_DELAY = 10;
+/* ------------------------- BLE state ------------------------------ */
+let device = null, server = null;
+let chrInfo = null, chrCfg = null, chrOtac = null, chrOtad = null;
+let notifyResolve = null, notifyBuf = '';
+let connected = false;
+let otaBusy = false;
+let pollBusy = false;
 
-  /* ------------------------------------------------------------------ */
-  /* DOM refs                                                           */
-  /* ------------------------------------------------------------------ */
+/* ---------------------------- Log --------------------------------- */
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, c => ({ '&': '&', '<': '<', '>': '>', '"': '"' }[c]));
+}
+function log(msg, type) {
+  const d = document.createElement('div');
+  d.className = 'entry';
+  const ts = new Date().toLocaleTimeString([], { hour12: false });
+  d.innerHTML = '<span class="ts">[' + ts + ']</span><span class="' + (type || 'info') + '">' + esc(msg) + '</span>';
+  const box = el('log');
+  box.prepend(d);
+  while (box.children.length > 100) box.removeChild(box.lastChild);
+}
 
-  const els = {
-    connDot:      document.getElementById('conn-dot'),
-    connStatus:   document.getElementById('conn-status'),
-    btnConnect:   document.getElementById('btn-connect'),
-    btnDisconnect: document.getElementById('btn-disconnect'),
-    deviceInfo:   document.getElementById('device-info'),
-    configSection: document.getElementById('config-section'),
-    otaSection:   document.getElementById('ota-section'),
-    actionsSection: document.getElementById('actions-section'),
-    infoModel:    document.getElementById('info-model'),
-    infoVersion:  document.getElementById('info-version'),
-    log:          document.getElementById('log'),
-    otaFile:      document.getElementById('f-ota-file'),
-    otaUpload:    document.getElementById('btn-ota-upload'),
-    otaProgress:  document.getElementById('ota-progress'),
-    otaFill:      document.querySelector('.progress-fill'),
-    otaPct:       document.getElementById('ota-pct'),
-    otaMsg:       document.getElementById('ota-msg'),
-    btnGetCfg:    document.getElementById('btn-get-config'),
-    btnSaveCfg:   document.getElementById('btn-save-config'),
-    btnCalibrate: document.getElementById('btn-calibrate'),
-    btnResetHdg:  document.getElementById('btn-reset-heading'),
-  };
+function setStatus(text, cls) {
+  const s = el('status');
+  s.textContent = text;
+  s.className = 'msg' + (cls ? ' ' + cls : '');
+}
 
-  const CFG_FIELDS = [
-    'gyro_gain','gyro_mode','gyro_reverse','steer_reverse',
-    'steer_deadband','steer_trim','servo_min_us','servo_center_us',
-    'servo_max_us','hold_p','profile','leds_on','leds_bright',
-    'leds_color','gyro_dlpf','gyro_fs','web_ap_ssid'
-  ];
-
-  /* ------------------------------------------------------------------ */
-  /* BLE state                                                          */
-  /* ------------------------------------------------------------------ */
-
-  let device = null;
-  let server = null;
-  let chrInfo = null;
-  let chrCfg  = null;
-  let chrOtac = null;
-  let chrOtad = null;
-  let notifyResolve = null;
-  let notifyBuffer = '';
-  let isConnected = false;
-  let otaInProgress = false;
-
-  /* ------------------------------------------------------------------ */
-  /* Logging                                                            */
-  /* ------------------------------------------------------------------ */
-
-  function log(msg, type = 'info') {
-    const div = document.createElement('div');
-    div.className = 'entry';
-    const ts = new Date().toLocaleTimeString([], { hour12: false });
-    div.innerHTML = `<span class="ts">[${ts}]</span><span class="${type}">${escapeHtml(msg)}</span>`;
-    els.log.prepend(div);
-  }
-
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, c => ({
-      '&': '&amp;', '<': '&lt;', '>': '&gt;',
-      '"': '&quot;', "'": '&#39;'
-    })[c]);
-  }
-
-  /* ------------------------------------------------------------------ */
-  /* UI helpers                                                         */
-  /* ------------------------------------------------------------------ */
-
-  function setConnected(connected) {
-    isConnected = connected;
-    els.connDot.classList.toggle('connected', connected);
-    els.connStatus.textContent = connected ? 'Connected' : 'Not connected';
-    els.btnConnect.style.display = connected ? 'none' : 'inline-block';
-    els.btnDisconnect.style.display = connected ? 'inline-block' : 'none';
-    els.deviceInfo.style.display = connected ? 'block' : 'none';
-    els.configSection.style.display = connected ? 'block' : 'none';
-    els.otaSection.style.display = connected ? 'block' : 'none';
-    els.actionsSection.style.display = connected ? 'block' : 'none';
-    els.otaUpload.disabled = !connected;
-  }
-  /* ------------------------------------------------------------------ */
-  /* BLE read/write helpers                                             */
-  /* ------------------------------------------------------------------ */
-
-  async function writeCfg(obj) {
-    const str = JSON.stringify(obj);
-    const enc = new TextEncoder().encode(str);
-    await chrCfg.writeValue(enc);
-  }
-
-  /* Send a JSON command on the CONFIG characteristic and wait for the
-   * device's notification response. The promise is registered BEFORE the
-   * write so we can't miss a fast response. */
-  async function sendCommand(cmd) {
-    return new Promise((resolve, reject) => {
-      notifyResolve = (result) => {
-        try { resolve(JSON.parse(result)); }
-        catch (e) { reject(new Error('Bad JSON from device')); }
-      };
-      chrCfg.writeValue(new TextEncoder().encode(JSON.stringify(cmd)))
-        .catch((e) => { notifyResolve = null; reject(e); });
-      setTimeout(() => {
-        if (notifyResolve) {
-          notifyResolve = null;
-          reject(new Error('Device did not respond (timeout)'));
-        }
-      }, 5000);
-    });
-  }
-
-  async function readInfo() {
-    const data = await chrInfo.readValue();
-    const dec = new TextDecoder().decode(data.buffer);
-    return JSON.parse(dec);
-  }
-
-  function onChrCfgValue(value) {
-    const dec = new TextDecoder().decode(value.buffer);
-    notifyBuffer += dec;
-
-    try {
-      const obj = JSON.parse(notifyBuffer);
-      notifyBuffer = '';
-      if (notifyResolve) {
-        const resolve = notifyResolve;
-        notifyResolve = null;
-        resolve(JSON.stringify(obj));
-      }
-    } catch (e) {
-      // incomplete JSON, wait for more
-    }
-  }
-
-  /* ------------------------------------------------------------------ */
-  /* Connection                                                         */
-  /* ------------------------------------------------------------------ */
-
-  async function connect() {
-    if (!navigator.bluetooth) {
-      log('Web Bluetooth not supported in this browser', 'err');
-      return;
-    }
-
-    try {
-      log('Requesting device...');
-      device = await navigator.bluetooth.requestDevice({
-        filters: [{ services: [SVC_UUID] }],
-        optionalServices: [SVC_UUID]
-      });
-
-      device.addEventListener('gattserverdisconnected', onDisconnected);
-
-      log('Connecting to GATT server...');
-      server = await device.gatt.connect();
-
-      log('Discovering service...');
-      const svc = await server.getPrimaryService(SVC_UUID);
-
-      log('Discovering characteristics...');
-      chrInfo = await svc.getCharacteristic(CHR_INFO);
-      chrCfg  = await svc.getCharacteristic(CHR_CFG);
-      chrOtac = await svc.getCharacteristic(CHR_OTAC);
-      chrOtad = await svc.getCharacteristic(CHR_OTAD);
-
-      /* Start notifications BEFORE any commands so responses are never missed */
-      chrCfg.addEventListener('characteristicvaluechanged',
-        (ev) => onChrCfgValue(ev.target.value));
-      await chrCfg.startNotifications();
-
-      log('Connected! Reading device info...');
-      setConnected(true);
-
-      const info = await readInfo();
-      els.infoModel.textContent = info.model || '—';
-      els.infoVersion.textContent = info.version || '—';
-      log(`Device info: ${info.model} v${info.version}`, 'ok');
-
-      await loadConfig();
-
-    } catch (err) {
-      log(`Connection failed: ${err.message}`, 'err');
-      setConnected(false);
-    }
-  }
-
-  function onDisconnected() {
-    log('Device disconnected', 'err');
-    setConnected(false);
-    server = null;
-    device = null;
-  }
-
-  async function disconnect() {
-    if (device && device.gatt.connected) {
-      device.gatt.disconnect();
-    }
-    setConnected(false);
-  }
-
-  /* ------------------------------------------------------------------ */
-  /* Config load / save                                                 */
-  /* ------------------------------------------------------------------ */
-
-  async function loadConfig() {
-    try {
-      log('Reading config...');
-      const resp = await sendCommand({ cmd: 'get_config' });
-      if (resp.ok) {
-        populateConfig(resp);
-        log('Config loaded', 'ok');
-      } else {
-        log(`Read failed: ${resp.error || 'unknown'}`, 'err');
-      }
-    } catch (err) {
-      log(`Read failed: ${err.message}`, 'err');
-    }
-  }
-
-  function populateConfig(cfg) {
-    CFG_FIELDS.forEach(key => {
-      const input = document.getElementById('f-' + key);
-      if (!input) return;
-      const val = cfg[key];
-      if (val === undefined) return;
-      if (input.tagName === 'SELECT' || input.tagName === 'INPUT') {
-        input.value = String(val);
-      }
-    });
-    if (cfg.leds_color !== undefined) {
-      const c = document.getElementById('f-leds_color');
-      c.value = '#' + String(cfg.leds_color).padStart(6, '0');
-    }
-  }
-
-  async function saveConfig() {
-    try {
-      const obj = { cmd: 'set_config' };
-      CFG_FIELDS.forEach(key => {
-        const input = document.getElementById('f-' + key);
-        if (!input) return;
-        let val;
-        if (input.type === 'color') {
-          val = parseInt(input.value.replace('#', ''), 16);
-        } else {
-          val = input.value === '' ? undefined : parseFloat(input.value);
-        }
-        if (val !== undefined) obj[key] = val;
-      });
-
-      log('Saving config...');
-      const resp = await sendCommand(obj);
-      if (resp.ok) {
-        log('Config saved', 'ok');
-      } else {
-        log(`Save failed: ${resp.error || 'unknown'}`, 'err');
-      }
-    } catch (err) {
-      log(`Save failed: ${err.message}`, 'err');
-    }
-  }
-
-  /* ------------------------------------------------------------------ */
-  /* Actions                                                            */
-  /* ------------------------------------------------------------------ */
-
-  async function calibrate() {
-    if (!confirm('Keep the car still. Continue?')) return;
-    try {
-      log('Calibrating gyro...');
-      const resp = await sendCommand({ cmd: 'calibrate' });
-      if (resp.ok) log('Calibration complete', 'ok');
-      else log(`Calibrate failed: ${resp.error}`, 'err');
-    } catch (err) {
-      log(`Calibrate failed: ${err.message}`, 'err');
-    }
-  }
-
-  async function resetHeading() {
-    try {
-      log('Resetting heading...');
-      const resp = await sendCommand({ cmd: 'reset_heading' });
-      if (resp.ok) log('Heading reset', 'ok');
-      else log(`Reset failed: ${resp.error}`, 'err');
-    } catch (err) {
-      log(`Reset failed: ${err.message}`, 'err');
-    }
-  }
-
-  /* ------------------------------------------------------------------ */
-  /* OTA                                                                */
-  /* ------------------------------------------------------------------ */
-
-  els.otaFile.addEventListener('change', () => {
-    els.otaUpload.disabled = !(els.otaFile.files && els.otaFile.files.length);
+/* -------- Command transport (JSON over CONFIG characteristic) ----- */
+/* Promise registered BEFORE the write so a fast response is never
+ * missed. Responses arrive as notifications on 0xA102. */
+function sendCommand(cmd) {
+  if (!connected) return Promise.reject(new Error('Not connected'));
+  return new Promise((resolve, reject) => {
+    notifyResolve = (text) => {
+      try { resolve(JSON.parse(text)); }
+      catch (e) { reject(new Error('Bad JSON from device')); }
+    };
+    chrCfg.writeValue(new TextEncoder().encode(JSON.stringify(cmd)))
+      .catch(e => { notifyResolve = null; reject(e); });
+    setTimeout(() => {
+      if (notifyResolve) { notifyResolve = null; reject(new Error('Device did not respond (timeout)')); }
+    }, 5000);
   });
+}
 
-  async function otaUpload() {
-    const file = els.otaFile.files[0];
-    if (!file) return;
-    if (!confirm(`Flash ${file.name} (${(file.size / 1024).toFixed(1)} KB)?`)) return;
+function onChrCfgValue(value) {
+  notifyBuf += new TextDecoder().decode(value.buffer);
+  try {
+    const obj = JSON.parse(notifyBuf);
+    notifyBuf = '';
+    if (notifyResolve) { const r = notifyResolve; notifyResolve = null; r(JSON.stringify(obj)); }
+  } catch (e) { /* incomplete — wait for more fragments */ }
+}
 
-    otaInProgress = true;
-    els.otaProgress.style.display = 'block';
-    els.otaUpload.disabled = true;
-    els.otaFile.disabled = true;
+/* ---------------------- Connect / disconnect ---------------------- */
+function setConnectedUI(on) {
+  connected = on;
+  el('btnConn').textContent = on ? 'Disconnect' : 'Connect';
+  el('btnConn').classList.toggle('disconnect', on);
+  if (!on) {
+    el('ver').textContent = 'BLE';
+    el('ver').classList.remove('connected');
+    setStatus('Not connected — tap Connect and pick gyroX.');
+    ['rx', 'rate', 'heading', 'output'].forEach(id => { el(id).textContent = '—'; });
+  }
+  el('btnSave').disabled = !on;
+  el('btnCal').disabled = !on;
+  el('btnLoad').disabled = !on;
+  el('btnOta').disabled = !on || !el('otaFile').files.length;
+}
 
+async function connect() {
+  if (!navigator.bluetooth) { log('Web Bluetooth not available — use Chrome/Edge on Android', 'err'); return; }
+  if (connected) { disconnect(); return; }
+  try {
+    log('Requesting device…');
+    device = await navigator.bluetooth.requestDevice({ filters: [{ services: [SVC_UUID] }] });
+    device.addEventListener('gattserverdisconnected', onDisconnected);
+    log('Connecting GATT…');
+    server = await device.gatt.connect();
+    const svc = await server.getPrimaryService(SVC_UUID);
+    chrInfo = await svc.getCharacteristic(CHR_INFO);
+    chrCfg  = await svc.getCharacteristic(CHR_CFG);
+    chrOtac = await svc.getCharacteristic(CHR_OTAC);
+    chrOtad = await svc.getCharacteristic(CHR_OTAD);
+    chrCfg.addEventListener('characteristicvaluechanged', ev => onChrCfgValue(ev.target.value));
+    await chrCfg.startNotifications();
+    setConnectedUI(true);
+    log('Connected', 'ok');
     try {
-      const ab = await new Promise((resolve, reject) => {
-        const r = new FileReader();
-        r.onload = () => resolve(r.result);
-        r.onerror = () => reject(r.error);
-        r.readAsArrayBuffer(file);
-      });
+      const info = JSON.parse(new TextDecoder().decode((await chrInfo.readValue()).buffer));
+      if (info.version) el('ver').textContent = 'fw: ' + info.version;
+      log('Firmware ' + info.version, 'ok');
+    } catch (e) { /* pill stays generic */ }
+    await loadCfg();
+    pollLoop();
+  } catch (e) {
+    log('Connection failed: ' + e.message, 'err');
+    if (device) try { device.gatt.disconnect(); } catch (_) {}
+    device = null; server = null;
+    setConnectedUI(false);
+  }
+}
 
-      const bytes = new Uint8Array(ab);
-      log(`OTA begin: ${bytes.length} bytes`);
+function onDisconnected() {
+  log('Device disconnected', 'err');
+  if (otaBusy) { el('otaMsg').textContent = 'Connection lost — device rebooting.'; otaBusy = false; }
+  device = null; server = null;
+  setConnectedUI(false);
+}
 
-      await writeCtrl({ cmd: 'begin', size: bytes.length });
+function disconnect() {
+  if (device && device.gatt.connected) device.gatt.disconnect();
+  device = null; server = null;
+  setConnectedUI(false);
+  log('Disconnected');
 
-      let offset = 0;
-      while (offset < bytes.length) {
-        const end = Math.min(offset + MTU_CHUNK, bytes.length);
-        await chrOtad.writeValue(bytes.slice(offset, end));
-        offset = end;
+/* ------------------ Config load / save / actions ------------------ */
+function applyCfg(c) {
+  el('mMode').value = c.gyro_mode;
+  el('mGain').value = c.gyro_gain; el('vGain').textContent = (c.gyro_gain / 10).toFixed(1);
+  el('mGyroRev').checked = c.gyro_reverse === 1;
+  el('mSteerRev').checked = c.steer_reverse === 1;
+  el('mDeadband').value = c.steer_deadband; el('vDeadband').textContent = c.steer_deadband;
+  el('mTrim').value = c.steer_trim; el('vTrim').textContent = c.steer_trim;
+  el('mSmin').value = c.servo_min_us;
+  el('mScenter').value = c.servo_center_us;
+  el('mSmax').value = c.servo_max_us;
+  el('mGzoff').value = c.gyro_z_offset;
+  el('mDlpf').value = c.gyro_dlpf;
+  el('mFs').value = c.gyro_fs;
+  el('mProfile').value = (c.profile === undefined ? 0 : c.profile);
+  el('rowResetHead').style.display = (c.gyro_mode === 1) ? '' : 'none';
+  el('mLedsOn').checked = c.leds_on === 1;
+  const hexc = '#' + Number(c.leds_color || 0).toString(16).padStart(6, '0');
+  el('mLedsColor').value = hexc;
+  el('vLedsColor').textContent = hexc;
+  el('mLedsBright').value = (c.leds_bright === undefined ? 100 : c.leds_bright);
+  el('vBright').textContent = el('mLedsBright').value;
+}
 
-        const pct = Math.round((offset / bytes.length) * 100);
-        els.otaFill.style.width = pct + '%';
-        els.otaPct.textContent = pct + '%';
-        els.otaMsg.textContent = `Flashing ${offset}/${bytes.length} bytes...`;
+function collectCfg() {
+  return {
+    gyro_mode: Number(el('mMode').value),
+    gyro_gain: Number(el('mGain').value),
+    gyro_reverse: el('mGyroRev').checked ? 1 : 0,
+    steer_reverse: el('mSteerRev').checked ? 1 : 0,
+    steer_deadband: Number(el('mDeadband').value),
+    steer_trim: Number(el('mTrim').value),
+    servo_min_us: Number(el('mSmin').value),
+    servo_center_us: Number(el('mScenter').value),
+    servo_max_us: Number(el('mSmax').value),
+    gyro_z_offset: Number(el('mGzoff').value),
+    gyro_dlpf: Number(el('mDlpf').value),
+    gyro_fs: Number(el('mFs').value),
+    profile: Number(el('mProfile').value),
+    leds_on: el('mLedsOn').checked ? 1 : 0,
+    leds_color: parseInt(el('mLedsColor').value.slice(1), 16),
+    leds_bright: Number(el('mLedsBright').value),
+  };
+}
 
-        if (offset < bytes.length) {
-          await sleep(CHUNK_DELAY);
-        }
-      }
+async function saveCfg() {
+  try {
+    el('mMsg').textContent = 'Saving…';
+    const r = await sendCommand(Object.assign({ cmd: 'set_config' }, collectCfg()));
+    if (!r.ok) throw new Error(r.error || 'save failed');
+    el('mMsg').textContent = 'Saved to NVS';
+    setTimeout(() => { el('mMsg').textContent = ''; }, 1500);
+    log('Config saved', 'ok');
+  } catch (e) {
+    el('mMsg').textContent = 'Save failed: ' + e.message;
+    log('Save failed: ' + e.message, 'err');
+  }
+}
 
-      log(`OTA stream complete (${bytes.length} bytes)`);
-      await writeCtrl({ cmd: 'complete' });
+async function loadCfg() {
+  try {
+    const r = await sendCommand({ cmd: 'get_config' });
+    if (!r.ok) throw new Error(r.error || 'read failed');
+    applyCfg(r);
+    log('Config loaded', 'ok');
+  } catch (e) {
+    log('Config read failed: ' + e.message, 'err');
+  }
+}
 
-      log('Waiting for device to acknowledge...');
-      await sleep(1500);
-      log('OTA complete — device should reboot', 'ok');
+async function calibrate() {
+  if (!confirm('Keep the car completely still, then press OK.')) return;
+  try {
+    el('mMsg').textContent = 'Calibrating gyro…';
+    const r = await sendCommand({ cmd: 'calibrate' });
+    if (!r.ok) throw new Error(r.error || 'failed');
+    el('mMsg').textContent = 'Calibrated';
+    loadCfg();
+    setTimeout(() => { el('mMsg').textContent = ''; }, 1500);
+    log('Gyro calibrated', 'ok');
+  } catch (e) {
+    el('mMsg').textContent = 'Calibration failed: ' + e.message;
+    log('Calibration failed: ' + e.message, 'err');
+  }
+}
 
-    } catch (err) {
-      log(`OTA failed: ${err.message}`, 'err');
-      try { await writeCtrl({ cmd: 'abort' }); } catch (_) {}
-    } finally {
-      otaInProgress = false;
-      els.otaUpload.disabled = false;
-      els.otaFile.disabled = false;
+async function resetHead() {
+  try {
+    await sendCommand({ cmd: 'reset_heading' });
+    el('mMsg').textContent = 'Heading-hold target reset';
+    setTimeout(() => { el('mMsg').textContent = ''; }, 1000);
+    log('Heading reset', 'ok');
+  } catch (e) { log('Reset heading failed: ' + e.message, 'err'); }
+}
+
+/* slider value labels (same as AP page) */
+[['mGain', 'vGain', true], ['mDeadband', 'vDeadband', false], ['mTrim', 'vTrim', false]].forEach(([id, vid, div10]) => {
+  el(id).addEventListener('input', () => {
+    let v = el(id).value;
+    if (div10) v = (Number(v) / 10).toFixed(1);
+    el(vid).textContent = v;
+  });
+});
+
+}
+
+/* profile presets (same as AP page) */
+const PRESETS = {
+  0: { name: 'General', gyro_mode: 0, gyro_gain: 100, steer_deadband: 8, steer_trim: 0, servo_min_us: 500, servo_center_us: 1500, servo_max_us: 2500 },
+  1: { name: 'Drift',   gyro_mode: 0, gyro_gain: 200, steer_deadband: 4, steer_trim: 0, servo_min_us: 600, servo_center_us: 1500, servo_max_us: 2400 },
+  2: { name: 'Bashing', gyro_mode: 0, gyro_gain: 120, steer_deadband: 7, steer_trim: 0, servo_min_us: 500, servo_center_us: 1500, servo_max_us: 2500 },
+};
+el('mProfile').addEventListener('change', () => {
+  const p = Number(el('mProfile').value);
+  if (p === 3) return;
+  const pre = PRESETS[p];
+  if (!pre) return;
+  el('mMode').value = pre.gyro_mode;
+  el('rowResetHead').style.display = pre.gyro_mode === 1 ? '' : 'none';
+  el('mGain').value = pre.gyro_gain;
+  el('vGain').textContent = (pre.gyro_gain / 10).toFixed(1);
+  el('mDeadband').value = pre.steer_deadband;
+  el('vDeadband').textContent = pre.steer_deadband;
+  el('mTrim').value = pre.steer_trim;
+  el('vTrim').textContent = pre.steer_trim;
+  el('mSmin').value = pre.servo_min_us;
+  el('mScenter').value = pre.servo_center_us;
+  el('mSmax').value = pre.servo_max_us;
+  el('mMsg').textContent = pre.name + ' preset loaded — press Save to apply';
+});
+const flipToCustom = () => { el('mProfile').value = 3; };
+['mGain', 'mDeadband', 'mTrim', 'mSmin', 'mScenter', 'mSmax'].forEach(id => {
+  el(id).addEventListener('input', flipToCustom);
+});
+el('mMode').addEventListener('change', () => {
+  el('rowResetHead').style.display = el('mMode').value === '1' ? '' : 'none';
+  flipToCustom();
+});
+
+/* collapsible sections (Steering / Servo / Log) */
+document.querySelectorAll('.sep[data-collapse]').forEach(sep => {
+  sep.addEventListener('click', () => {
+    const open = sep.classList.toggle('open');
+    el('collapse-' + sep.dataset.collapse).classList.toggle('open', open);
+    sep.querySelector('.chev').textContent = open ? '▾' : '▸';
+  });
+});
+
+/* tabs (same as AP page) */
+const tabs = document.querySelectorAll('.tab');
+const panels = document.querySelectorAll('.tabpanel');
+tabs.forEach(t => {
+  t.addEventListener('click', () => {
+    tabs.forEach(x => { x.classList.remove('active'); x.setAttribute('aria-selected', 'false'); });
+    panels.forEach(p => p.classList.remove('active'));
+    t.classList.add('active');
+    t.setAttribute('aria-selected', 'true');
+    el('tab-' + t.dataset.tab).classList.add('active');
+  });
+});
+
+/* LEDs apply live on change (same as AP page) */
+el('mLedsOn').addEventListener('change', () => { if (connected) saveCfg(); });
+el('mLedsColor').addEventListener('input', () => { el('vLedsColor').textContent = el('mLedsColor').value; });
+el('mLedsColor').addEventListener('change', () => { if (connected) saveCfg(); });
+el('mLedsBright').addEventListener('input', () => { el('vBright').textContent = el('mLedsBright').value; });
+el('mLedsBright').addEventListener('change', () => { if (connected) saveCfg(); });
+
+
+/* ------------------------ OTA over BLE ---------------------------- */
+el('otaFile').addEventListener('change', () => {
+  el('btnOta').disabled = !connected || !el('otaFile').files.length;
+});
+
+async function otaUpload() {
+  const f = el('otaFile').files[0];
+  if (!f) { el('otaMsg').textContent = 'Choose a .bin file first'; return; }
+  if (!confirm('Flash ' + f.name + ' (' + (f.size / 1024).toFixed(1) + ' KB)? Keep the car parked.')) return;
+
+  otaBusy = true;
+  el('btnOta').disabled = true;
+  el('otaBar').style.width = '0%';
+  el('otaMsg').textContent = 'Starting… keep this tab open!';
+
+  try {
+    const ab = await new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result);
+      r.onerror = () => rej(r.error);
+      r.readAsArrayBuffer(f);
+    });
+    const bytes = new Uint8Array(ab);
+    log('OTA begin: ' + bytes.length + ' bytes');
+
+    /* OTA control lives on OTA_CTRL (0xA103), not the JSON CONFIG channel */
+    const ctrl = (o) => chrOtac.writeValue(new TextEncoder().encode(JSON.stringify(o)));
+    await ctrl({ cmd: 'begin', size: bytes.length });
+    log('OTA accepted by device', 'ok');
+
+    for (let off = 0; off < bytes.length; off += MTU_CHUNK) {
+      const end = Math.min(off + MTU_CHUNK, bytes.length);
+      await chrOtad.writeValue(bytes.slice(off, end));
+      const pct = Math.round((end / bytes.length) * 100);
+      el('otaBar').style.width = pct + '%';
+      el('otaMsg').textContent = 'Flashing ' + pct + '% — do not power off!';
+      if (end < bytes.length) await new Promise(r => setTimeout(r, CHUNK_DELAY));
     }
+    log('OTA stream complete, finalizing…');
+
+    await ctrl({ cmd: 'complete' });
+    el('otaBar').style.width = '100%';
+    el('otaMsg').textContent = 'Update written — rebooting into drive mode (hold boot 3 s to return here)';
+    log('OTA complete — device rebooting', 'ok');
+  } catch (e) {
+    el('otaMsg').textContent = 'OTA failed: ' + e.message;
+    log('OTA failed: ' + e.message, 'err');
+    try { await chrOtac.writeValue(new TextEncoder().encode(JSON.stringify({ cmd: 'abort' }))); } catch (_) {}
+  } finally {
+    otaBusy = false;
+    el('btnOta').disabled = !connected;
   }
+}
 
-  function writeCtrl(obj) {
-    const enc = new TextEncoder().encode(JSON.stringify(obj));
-    return chrOtac.writeValue(enc);
-  }
+/* ---------------------- Telemetry polling ------------------------- */
+async function pollOnce() {
+  const s = await sendCommand({ cmd: 'get_state' });
+  el('rx').textContent = s.rx;
+  el('rate').textContent = s.rate_z;
+  el('heading').textContent = Number(s.heading).toFixed(1);
+  el('output').textContent = s.output;
+  setStatus((s.rx_valid ? 'RX OK' : 'NO RX!') + '  ·  gyro ' + (s.gyro_ready ? 'OK' : '---'),
+            s.rx_valid ? '' : 'err');
+}
 
-  function sleep(ms) {
-    return new Promise(r => setTimeout(r, ms));
-  }
+async function pollLoop() {
+  if (!connected) return;
+  if (pollBusy) { schedulePoll(); return; }
+  pollBusy = true;
+  try { await pollOnce(); } catch (e) { /* transient — keep looping */ }
+  pollBusy = false;
+  schedulePoll();
+}
+function schedulePoll() { if (connected) setTimeout(pollLoop, 200); }
 
-  /* ------------------------------------------------------------------ */
-  /* Event listeners                                                    */
-  /* ------------------------------------------------------------------ */
+/* --------------------------- Wiring ------------------------------- */
+el('btnConn').addEventListener('click', connect);
+el('btnSave').addEventListener('click', saveCfg);
+el('btnLoad').addEventListener('click', loadCfg);
+el('btnCal').addEventListener('click', calibrate);
+el('btnResetHead').addEventListener('click', resetHead);
+el('btnOta').addEventListener('click', otaUpload);
 
-  els.btnConnect.addEventListener('click', connect);
-  els.btnDisconnect.addEventListener('click', disconnect);
-  els.btnGetCfg.addEventListener('click', loadConfig);
-  els.btnSaveCfg.addEventListener('click', saveConfig);
-  els.btnCalibrate.addEventListener('click', calibrate);
-  els.btnResetHdg.addEventListener('click', resetHeading);
-  els.otaUpload.addEventListener('click', otaUpload);
-
-  /* ------------------------------------------------------------------ */
-  /* Init                                                               */
-  /* ------------------------------------------------------------------ */
-
-  log('gyroX Config ready. Tap Connect.');
-  if (!navigator.bluetooth) {
-    log('Web Bluetooth not available — use Chrome/Edge on Android', 'err');
-  }
-
-})();
+/* ---------------------------- Init -------------------------------- */
+setConnectedUI(false);
+log('Ready. Tap Connect and pick gyroX.');
+if (!navigator.bluetooth) log('Web Bluetooth not available in this browser — use Chrome/Edge on Android.', 'err');
 

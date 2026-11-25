@@ -248,6 +248,24 @@ static int chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
                 return 0;
             }
 
+            if (strcmp(cmd_s, "get_state") == 0) {
+                cJSON_Delete(root);
+                const mixing_state_t *m = mixing_get_state();
+                cJSON *r = cJSON_CreateObject();
+                cJSON_AddNumberToObject(r, "rx", m->rx);
+                cJSON_AddNumberToObject(r, "rate_z", m->rate_z);
+                cJSON_AddNumberToObject(r, "heading", m->heading);
+                cJSON_AddNumberToObject(r, "output", m->output);
+                cJSON_AddBoolToObject(r, "rx_valid", m->rx_valid);
+                cJSON_AddBoolToObject(r, "gyro_ready", m->gyro_ready);
+                char *json = cJSON_PrintUnformatted(r);
+                if (json) {
+                    notify_json(conn_handle, chr_cfg_handle, json);
+                    free(json);
+                }
+                return 0;
+            }
+
             cJSON_Delete(root);
             const char *resp = "{\"error\":\"unknown_cmd\"}";
             notify_json(conn_handle, chr_cfg_handle, resp);
@@ -391,6 +409,26 @@ static int chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
 
     default:
         return BLE_ATT_ERR_UNLIKELY;
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* GATT registration callback — capture assigned value handles        */
+/* ------------------------------------------------------------------ */
+
+static void gatt_register_cb(struct ble_gatt_register_ctxt *ctxt, void *arg)
+{
+    (void)arg;
+    if (ctxt->op != BLE_GATT_REGISTER_OP_CHR) return;
+
+    if (ble_uuid_cmp(ctxt->chr.chr_def->uuid, &chr_info_uuid.u) == 0) {
+        chr_info_handle = ctxt->chr.val_handle;
+    } else if (ble_uuid_cmp(ctxt->chr.chr_def->uuid, &chr_cfg_uuid.u) == 0) {
+        chr_cfg_handle = ctxt->chr.val_handle;
+    } else if (ble_uuid_cmp(ctxt->chr.chr_def->uuid, &chr_otac_uuid.u) == 0) {
+        chr_otac_handle = ctxt->chr.val_handle;
+    } else if (ble_uuid_cmp(ctxt->chr.chr_def->uuid, &chr_otad_uuid.u) == 0) {
+        chr_otad_handle = ctxt->chr.val_handle;
     }
 }
 
@@ -558,6 +596,11 @@ esp_err_t ble_start(void)
     ble_hs_cfg.sm_bonding = 0;
     ble_hs_cfg.sm_mitm = 0;
     ble_hs_cfg.sm_sc = 0;
+
+    /* Capture the value handles NimBLE assigns during GATT registration —
+     * without these, notify_json() would target handle 0 and every JSON
+     * response would be lost. */
+    ble_hs_cfg.gatts_register_cb = gatt_register_cb;
 
     /* Start the host task */
     xTaskCreate(ble_host_task, "nimble_host", 4096, NULL, 5, NULL);
