@@ -32,9 +32,11 @@
 #include <freertos/task.h>
 #include <freertos/semphr.h>
 #include <nimble/nimble_port.h>
-#include <nimble/ble_hs.h>
 #include <host/ble_hs.h>
+#include <host/ble_hs_adv.h>
 #include <host/ble_uuid.h>
+#include <host/ble_gatt.h>
+#include <host/ble_gap.h>
 #include <services/gap/ble_svc_gap.h>
 
 static const char *TAG = "BLE";
@@ -62,6 +64,7 @@ static const ble_uuid128_t chr_otac_uuid =
 static const ble_uuid128_t chr_otad_uuid =
     BLE_UUID128_INIT(0xFB, 0x34, 0x9B, 0x5F, 0x80, 0x00, 0x10, 0x00,
                      0x00, 0x00, 0x00, 0x00, 0x10, 0xA1, 0x04, 0x00);
+
 /* ------------------------------------------------------------------ */
 /* Handles                                                            */
 /* ------------------------------------------------------------------ */
@@ -87,6 +90,18 @@ static struct {
     int32_t total_size;
     int32_t written_size;
 } s_ota = {0};
+
+/* ------------------------------------------------------------------ */
+/* Helpers                                                            */
+/* ------------------------------------------------------------------ */
+
+static void notify_json(uint16_t conn_handle, uint16_t attr_handle, const char *json)
+{
+    struct os_mbuf *om = ble_hs_mbuf_from_flat(json, strlen(json));
+    if (om) {
+        ble_gatts_notify_custom(conn_handle, attr_handle, om);
+    }
+}
 static int chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
                          struct ble_gatt_access_ctxt *ctxt, void *arg)
 {
@@ -106,12 +121,6 @@ static int chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
             return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
         }
         if (chr_id == 2) { /* CONFIG — dump current config as JSON */
-
-
-/* ------------------------------------------------------------------ */
-/* Helpers                                                            */
-/* ------------------------------------------------------------------ */
-
             cJSON *r = cJSON_CreateObject();
             cJSON_AddNumberToObject(r, "gyro_gain", s_cfg.gyro_gain);
             cJSON_AddNumberToObject(r, "gyro_mode", s_cfg.gyro_mode);
@@ -140,23 +149,23 @@ static int chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
         }
         return BLE_ATT_ERR_ATTR_NOT_FOUND;
 
-static void notify_json(uint16_t conn_handle, uint16_t attr_handle, const char *json)
-{
-    struct os_mbuf *om = ble_hs_mbuf_from_flat(json, strlen(json));
-    if (om) {
-        ble_gatt_notify_custom(conn_handle, attr_handle, om);
-    }
-}
     case BLE_GATT_ACCESS_OP_WRITE_CHR: {
         uint8_t buf[512];
         uint16_t len = ctxt->om->om_len;
-        if (len == 0 || len >= sizeof(buf)) return BLE_ATT_ERR_INVALID_ATTRIBUTE_VALUE_LEN;
+        if (len == 0 || len >= sizeof(buf)) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
         memcpy(buf, ctxt->om->om_data, len);
         buf[len] = '\0';
 
         if (chr_id == 2) { /* CONFIG — JSON command */
-
-
+            cJSON *root = cJSON_Parse((char *)buf);
+            if (!root || !cJSON_IsObject(root)) {
+                if (root) cJSON_Delete(root);
+                const char *err = "{\"error\":\"invalid JSON\"}";
+                if (conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+                    notify_json(conn_handle, chr_cfg_handle, err);
+                }
+                return 0;
+            }
 
             cJSON *cmd = cJSON_GetObjectItem(root, "cmd");
             const char *cmd_s = cmd && cJSON_IsString(cmd) ? cmd->valuestring : "";
@@ -247,7 +256,7 @@ static void notify_json(uint16_t conn_handle, uint16_t attr_handle, const char *
             cJSON *root = cJSON_Parse((char *)buf);
             if (!root || !cJSON_IsObject(root)) {
                 if (root) cJSON_Delete(root);
-                return BLE_ATT_ERR_INVALID_ATTRIBUTE_VALUE_LEN;
+                return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
             }
 
             cJSON *cmd = cJSON_GetObjectItem(root, "cmd");
@@ -259,20 +268,20 @@ static void notify_json(uint16_t conn_handle, uint16_t attr_handle, const char *
 
                 if (s_ota.in_progress) {
                     cJSON_Delete(root);
-                    return BLE_ATT_ERR_WRITE_REQUEST_REJECTED;
+                    return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
                 }
 
                 const esp_partition_t *update = esp_ota_get_next_update_partition(NULL);
                 if (!update || size <= 0 || (int32_t)update->size < size) {
                     cJSON_Delete(root);
-                    return BLE_ATT_ERR_WRITE_REQUEST_REJECTED;
+                    return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
                 }
 
                 esp_ota_handle_t ota = 0;
                 esp_err_t err = esp_ota_begin(update, OTA_WITH_SEQUENTIAL_WRITES, &ota);
                 if (err != ESP_OK) {
                     cJSON_Delete(root);
-                    return BLE_ATT_ERR_WRITE_REQUEST_REJECTED;
+                    return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
                 }
 
                 if (s_ota_mutex == NULL) {
@@ -313,21 +322,21 @@ static void notify_json(uint16_t conn_handle, uint16_t attr_handle, const char *
 
                 if (!in_progress) {
                     cJSON_Delete(root);
-                    return BLE_ATT_ERR_WRITE_REQUEST_REJECTED;
+                    return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
                 }
 
                 esp_err_t err = esp_ota_end(ota);
                 if (err != ESP_OK) {
                     ESP_LOGE(TAG, "OTA end failed: %s", esp_err_to_name(err));
                     cJSON_Delete(root);
-                    return BLE_ATT_ERR_WRITE_REQUEST_REJECTED;
+                    return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
                 }
 
                 err = esp_ota_set_boot_partition(part);
                 if (err != ESP_OK) {
                     ESP_LOGE(TAG, "OTA set boot partition failed: %s", esp_err_to_name(err));
                     cJSON_Delete(root);
-                    return BLE_ATT_ERR_WRITE_REQUEST_REJECTED;
+                    return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
                 }
 
                 ESP_LOGI(TAG, "OTA complete: %d bytes -> %s, rebooting",
@@ -344,7 +353,7 @@ static void notify_json(uint16_t conn_handle, uint16_t attr_handle, const char *
             }
 
             cJSON_Delete(root);
-            return BLE_ATT_ERR_WRITE_REQUEST_REJECTED;
+            return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
         }
 
         if (chr_id == 4) { /* OTA_DATA — raw binary, WRITE_NO_RSP */
@@ -355,7 +364,7 @@ static void notify_json(uint16_t conn_handle, uint16_t attr_handle, const char *
             xSemaphoreGive(s_ota_mutex);
 
             if (!ok) {
-                return BLE_ATT_ERR_WRITE_REQUEST_REJECTED;
+                return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
             }
 
             esp_err_t err = esp_ota_write(ota, buf, len);
@@ -366,7 +375,7 @@ static void notify_json(uint16_t conn_handle, uint16_t attr_handle, const char *
                 esp_ota_abort(ota);
                 memset(&s_ota, 0, sizeof(s_ota));
                 xSemaphoreGive(s_ota_mutex);
-                return BLE_ATT_ERR_WRITE_REQUEST_REJECTED;
+                return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
             }
 
             xSemaphoreTake(s_ota_mutex, portMAX_DELAY);
@@ -442,6 +451,12 @@ static void ble_host_task(void *param)
 }
 
 /* ------------------------------------------------------------------ */
+/* GAP event callback (forward declaration)                           */
+/* ------------------------------------------------------------------ */
+
+static int gap_event_cb(struct ble_gap_event *event, void *arg);
+
+/* ------------------------------------------------------------------ */
 /* Advertising                                                        */
 /* ------------------------------------------------------------------ */
 
@@ -452,17 +467,21 @@ static void ble_advertise(void)
     const char *name = "gyroX";
 
     /* Device name + flags in the advertising payload */
-    ble_hs_adv_fields_set_flags(&adv_fields, BLE_HS_ADV_F_DISC_GEN);
-    ble_hs_adv_fields_set_name(&adv_fields, (uint8_t *)name, strlen(name));
+    adv_fields.flags = BLE_HS_ADV_F_DISC_GEN;
+    adv_fields.name = (uint8_t *)name;
+    adv_fields.name_len = strlen(name);
+    adv_fields.name_is_complete = 1;
 
     /* Advertise the 128-bit service UUID so Web Bluetooth can filter on it */
-    adv_fields.uuid128[0].u128 = svc_uuid;
-    adv_fields.num_uuid128s = 1;
+    adv_fields.uuids128 = &svc_uuid;
+    adv_fields.num_uuids128 = 1;
+    adv_fields.uuids128_is_complete = 1;
 
     ble_gap_adv_set_fields(&adv_fields);
 
-    ble_gap_adv_params_set(&adv_params);
-    ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, NULL, BLE_HS_FOREVER, &adv_params, NULL, NULL);
+    /* Callback is passed directly to ble_gap_adv_start() */
+    ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, NULL, BLE_HS_FOREVER, &adv_params,
+                      gap_event_cb, NULL);
     ESP_LOGI(TAG, "Advertising as '%s' with service UUID", name);
 }
 
@@ -485,10 +504,6 @@ static int gap_event_cb(struct ble_gap_event *event, void *arg)
     case BLE_GAP_EVENT_DISCONNECT:
         ESP_LOGI(TAG, "BLE client disconnected");
         s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
-        ble_advertise();
-        break;
-    case BLE_GAP_EVENT_ADV_COMPLETE:
-        /* Restart advertising so we stay discoverable */
         ble_advertise();
         break;
     default:
@@ -529,7 +544,7 @@ esp_err_t ble_start(void)
     }
 
     /* No passkey display available — use Just Works pairing */
-    ble_hs_cfg.sm_io_cap = BLE_HS_IO_CAP_NONE;
+    ble_hs_cfg.sm_io_cap = BLE_SM_IOACT_NONE;
     ble_hs_cfg.sm_bonding = 0;
     ble_hs_cfg.sm_mitm = 0;
     ble_hs_cfg.sm_sc = 0;
@@ -540,7 +555,6 @@ esp_err_t ble_start(void)
     /* Wait for the host to come up before configuring advertising */
     vTaskDelay(pdMS_TO_TICKS(500));
 
-    ble_hs_gap_register_cb(gap_event_cb, NULL);
     ble_advertise();
 
     s_ble_running = true;
@@ -564,3 +578,4 @@ bool ble_is_running(void)
 {
     return s_ble_running;
 }
+
