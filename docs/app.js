@@ -601,7 +601,11 @@ async function otaUpload() {
 
     for (let off = 0; off < bytes.length; off += MTU_CHUNK) {
       const end = Math.min(off + MTU_CHUNK, bytes.length);
-      await chrOtad.writeValue(bytes.slice(off, end));
+      /* Write-without-response: no ATT response to wait for, which removes
+       * the dominant per-chunk cost (Chrome's write-response round trip).
+       * The CHUNK_DELAY sleep below is the flow-control mechanism that
+       * keeps us from outrunning the device's flash writes. */
+      await chrOtad.writeValueWithoutResponse(bytes.slice(off, end));
       const pct = Math.round((end / bytes.length) * 100);
       el('otaBar').style.width = pct + '%';
       el('otaMsg').textContent = 'Flashing ' + pct + '% - do not power off!';
