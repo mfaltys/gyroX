@@ -100,7 +100,12 @@ void mixing_update(void)
             s_tweak_active = false;
             if (s_tweak_reset_after) {
                 s_tweak_reset_after = false;
-                mixing_reset_heading();
+                /* Only meaningful in heading-hold mode: re-capture the target
+                 * so hold cannot yank from a stale angle. Rate mode never
+                 * reads the heading target, so there is nothing to refresh. */
+                if (s_cfg.gyro_mode == 1) {
+                    mixing_reset_heading();
+                }
             }
         }
         return;
