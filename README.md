@@ -24,17 +24,17 @@ MPU-6050 (I2C) ─┘        (gyro mixing)
   - **Rate:** steering correction proportional to yaw rate (deg/s)
   - **Heading hold:** holds a heading (target captured with "Reset heading-hold target")
 - Adjustable gain, axis reversing, deadband, trim, servo min/center/max (µs)
-- Tuning profiles — General / Drift / Bashing / Custom — one tap in the web UI
+- Tuning profiles - General / Drift / Bashing / Custom - one tap in the web UI
 - Advanced sensor settings: gyro DLPF bandwidth and full-scale range, applied live
 - 3× WS2812B LED rail (XIAO D6): on/off, color and brightness from the web UI, saved in NVS
-- Firmware update (OTA) from the web UI — upload the .bin over the AP, no USB needed
+- Firmware update (OTA) from the web UI - upload the .bin over the AP, no USB needed
 - Web UI at `http://192.168.4.1/` while in AP mode; captive portal DNS included
 - All settings saved in NVS and survive reboots
 - 100 Hz control loop
 
 ## Wiring (suggested defaults)
 
-The XIAO ESP32C3 silkscreen labels (D0–D10) map to raw GPIO numbers like this:
+The XIAO ESP32C3 silkscreen labels (D0-D10) map to raw GPIO numbers like this:
 
 | XIAO silk | D0 | D1 | D2 | D3 | D4 | D5 | D6 | D7 | D8 | D9 | D10 |
 |-----------|----|----|----|----|----|----|----|----|----|----|-----|
@@ -50,34 +50,34 @@ Wire by the **silkscreen name**:
 | **D8** | GPIO 8 | Servo signal | Servo signal wire (usually white/orange) |
 | **D10** | GPIO 10 | PWM input | ELRS receiver steering-channel signal |
 | **D6** | GPIO 21 | WS2812B data | 3-LED rail data-in (first LED's DIN) |
-| GND | — | Common ground | MPU-6050 GND, servo GND, receiver GND |
-| 5V / 3V3 | — | Power | MPU-6050 VCC (3V3 recommended) |
+| GND | - | Common ground | MPU-6050 GND, servo GND, receiver GND |
+| 5V / 3V3 | - | Power | MPU-6050 VCC (3V3 recommended) |
 
-> **Do not use D9 for the servo** — D9 is GPIO9, the XIAO's boot-button pin. The button
+> **Do not use D9 for the servo** - D9 is GPIO9, the XIAO's boot-button pin. The button
 > shorts that pin to ground, which fights the servo PWM output and glitches the servo
-> every time it's pressed. D8 (GPIO8) is fine — it's a boot strapping pin, but the servo
+> every time it's pressed. D8 (GPIO8) is fine - it's a boot strapping pin, but the servo
 > input is high-impedance and never drives it, so boot mode is unaffected.
 
-The **boot button (GPIO 9 / D9)** is on the board itself — no wiring needed.
+The **boot button (GPIO 9 / D9)** is on the board itself - no wiring needed.
 
 > **Why not hold the button at power-up?** GPIO 9 is a strapping pin on the ESP32-C3:
 > held low at reset it puts the chip into the ROM download mode (that's the usual
-> flash gesture). The firmware therefore only checks the button *after* boot — hold it
+> flash gesture). The firmware therefore only checks the button *after* boot - hold it
 > for ~3 s once the car is powered. If you accidentally end up in download mode
 > (no app logs on the serial monitor, board appears dead), just power-cycle without
 > touching the button.
 
 **Power:** run the servo from its own supply/BEC, not the XIAO. All grounds must be common.
-Power the MPU-6050 module from **3V3** — most breakout boards (GY-521) tie their I2C
+Power the MPU-6050 module from **3V3** - most breakout boards (GY-521) tie their I2C
 pull-ups to VCC, so feeding them 5 V puts 5 V on the ESP32-C3 I2C pins, which are not
 5 V tolerant. Most modules include I2C pull-ups; if yours doesn't, the firmware's
 internal pull-ups usually suffice at 100 kHz.
 
-**LED rail:** 3× WS2812B on **D6 (GPIO 21)** — data into the first LED's DIN, powered
-from 3V3 with common GND. Full white on all three draws ~150–200 mA; prefer medium
+**LED rail:** 3× WS2812B on **D6 (GPIO 21)** - data into the first LED's DIN, powered
+from 3V3 with common GND. Full white on all three draws ~150-200 mA; prefer medium
 colors, or feed the rail from an external supply (common ground still required).
 
-> GPIO pins are compile-time defaults in `main/config.h` — change them there and rebuild
+> GPIO pins are compile-time defaults in `main/config.h` - change them there and rebuild
 > if you want a different layout. All *tuning* values (gain, mode, trim, servo limits…)
 > are stored in NVS and editable over the web UI. The boot button (GPIO 9) is not
 > remappable.
@@ -88,7 +88,7 @@ colors, or feed the rail from an external supply (common ground still required).
    - No Wi-Fi is started.
    - The mixer runs at 100 Hz: `output = clamp(rx + gyro_correction, -100, 100)`.
    - On first boot (no saved gyro offset) the firmware auto-calibrates the MPU-6050
-     zero-rate offset — **keep the car still for ~1.5 s after power-up**.
+     zero-rate offset - **keep the car still for ~1.5 s after power-up**.
 
 2. **Web UI mode:** power up normally, then **press and hold the boot button for
    ~3 seconds** (any time after power-up).
@@ -98,7 +98,7 @@ colors, or feed the rail from an external supply (common ground still required).
      gain/mode/reversing, steering deadband/trim, servo limits, the advanced sensor
      settings, calibrate the gyro, reset the heading-hold target, control the LED
      rail, and click **Save** (writes NVS).
-   - The mixer keeps running the whole time — you can tune the car live.
+   - The mixer keeps running the whole time - you can tune the car live.
    - **Power cycle the car** → AP comes back up only if you hold the boot button again.
 
 ## Config parameters (web UI / NVS)
@@ -126,7 +126,7 @@ colors, or feed the rail from an external supply (common ground still required).
 
 ## Build & flash
 
-The XIAO ESP32C3 uses its native USB-Serial-JTAG for flashing — Windows should present
+The XIAO ESP32C3 uses its native USB-Serial-JTAG for flashing - Windows should present
 a COM port automatically.
 
 ## Project layout
@@ -144,7 +144,7 @@ gyroX/
 │   ├── gyro.h / gyro.c     # MPU-6050 driver + heading integration
 │   ├── pwm_in.h / pwm_in.c # ELRS PWM input decode (GPIO ISR)
 │   ├── servo.h / servo.c   # LEDC servo output
-│   ├── leds.h / leds.c     # WS2812B rail (RMT) — on/off + color
+│   ├── leds.h / leds.c     # WS2812B rail (RMT) - on/off + color
 │   ├── mixing.h / mixing.c # rx + gyro mixing + failsafe
 │   ├── web.h / web.c       # softAP + captive DNS + HTTP settings API
 │   ├── web/index.html      # web UI (embedded at build time)
@@ -156,20 +156,20 @@ gyroX/
 
 - The gyro integrates yaw rate into a heading; it assumes the car stays roughly flat
   (no pitch/roll compensation). For drift cars this is exactly the axis you want.
-- Heading hold captures its target when you click **Reset heading-hold target** — do
+- Heading hold captures its target when you click **Reset heading-hold target** - do
   that with the car pointing straight.
 - AP mode is deliberately temporary: 3 s boot-button hold after power-up → AP on;
   power cycle → AP off.
 - OTA: the upload is written to the *inactive* app slot and the bootloader verifies
   the image at boot, falling back to the previous firmware if it is invalid. The car
-  may micro-glitch for a moment while flash sectors erase — update while parked.
+  may micro-glitch for a moment while flash sectors erase - update while parked.
   After an OTA reboot the AP is off (drive mode): hold the boot button 3 s to return
   here. The partition layout is OTA-only (no factory slot), so the first firmware
   install after adopting this table must be over USB.
-- ELRS PWM update rates vary (50–500 Hz typical); the decoder edge-times every pulse
+- ELRS PWM update rates vary (50-500 Hz typical); the decoder edge-times every pulse
   and low-pass filters the result, so it works across rates.
 
 ## License
 
 Open source. `main/cjson.{c,h}` is vendored cJSON, MIT licensed (see the file headers).
-Everything else in this repo is MIT licensed — add a `LICENSE` file before publishing.
+Everything else in this repo is MIT licensed - add a `LICENSE` file before publishing.

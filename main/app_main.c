@@ -1,4 +1,4 @@
-/* gyroX — RC car gyro for Seeed XIAO ESP32C3 + MPU-6050
+/* gyroX - RC car gyro for Seeed XIAO ESP32C3 + MPU-6050
  *
  * Sits between an ELRS PWM receiver and the steering servo:
  *   RX PWM -> gyro correction -> servo PWM
@@ -113,7 +113,7 @@ void app_main(void)
      * "pending verify" and must be confirmed healthy, or the next reboot
      * falls back to the previous slot. All core init above succeeded
      * (config, gyro, PWM, servo, mixer, LEDs, BLE), so this image is
-     * good — confirm it now. Deliberately NOT delayed: a quick battery
+     * good - confirm it now. Deliberately NOT delayed: a quick battery
      * swap inside a grace window would otherwise trigger a spurious
      * rollback (pending-verify state survives power loss in otadata). */
     esp_ota_mark_app_valid_cancel_rollback();

@@ -1,7 +1,7 @@
 # Release pipeline: push a semver tag (v1.2.3) → build firmware in the
 # official ESP-IDF environment → attach the .bin (+ sha256 sidecar) to an
 # auto-generated GitHub Release. The BLE web page discovers releases via
-# the GitHub API — no manifest file to maintain.
+# the GitHub API - no manifest file to maintain.
 name: Release
 
 on:
@@ -41,7 +41,7 @@ jobs:
           name: gyroX ${{ env.VERSION }}
           generate_release_notes: true   # auto changelog from commits since last tag
 
-      - name: Upload release assets (retried — GH asset-upload flakiness)
+      - name: Upload release assets (retried - GH asset-upload flakiness)
         # For humans downloading from the releases page. The BLE web page
         # fetches from S3 instead (GitHub release-asset downloads are not
         # CORS-accessible), so a failure here never blocks the OTA path.
@@ -59,7 +59,7 @@ jobs:
               sleep $((attempt * 20))
             fi
           done
-          echo "::warning::release asset upload failed after $n attempts — the BLE page still works via S3."
+          echo "::warning::release asset upload failed after $n attempts - the BLE page still works via S3."
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4

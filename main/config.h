@@ -5,7 +5,7 @@
 #include <cJSON.h>
 
 /*
- * gyroX — RC car gyro (Seeed XIAO ESP32C3 + MPU-6050)
+ * gyroX - RC car gyro (Seeed XIAO ESP32C3 + MPU-6050)
  *
  * The GPIO pins below are the suggested defaults (see README.md wiring), matched to
  * the XIAO silkscreen. Tuning values are stored in NVS and editable over the web UI;

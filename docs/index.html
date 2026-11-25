@@ -14,7 +14,7 @@
     <button id="btnConn" class="btn-conn">Connect</button>
   </header>
 
-  <div id="status" class="msg">Not connected — tap Connect and pick gyroX.</div>
+  <div id="status" class="msg">Not connected - tap Connect and pick gyroX.</div>
 
   <nav class="tabs" role="tablist">
     <button class="tab active" data-tab="drive" role="tab" aria-selected="true">Drive</button>
@@ -129,28 +129,30 @@
         <label>Gyro zero offset (°/s)</label>
         <input type="number" id="mGzoff" step="0.001">
       </div>
-      <div class="msg">Applied on Save — no reboot needed.</div>
+      <div class="msg">Applied on Save - no reboot needed.</div>
 
       <div class="sep">Firmware update (OTA)</div>
-      <div class="row"><label>Installed</label><span id="otaInstalled" class="value">—</span></div>
-      <div class="row">
-        <label>Version</label>
-        <select id="otaVersion"><option>Loading releases…</option></select>
+      <div class="ota-box" id="otaBox">
+        <div class="row"><label>Current</label><span id="otaInstalled" class="value">-</span></div>
+        <div class="row"><label>Latest</label><span id="otaLatest" class="value">-</span></div>
+        <div id="otaState" class="msg">Connect to check for updates.</div>
       </div>
-      <div id="otaMeta" class="msg"></div>
       <div class="row"><button id="btnOta" class="btn-full" disabled>Update & flash over BLE</button></div>
       <div class="progress"><div class="fill" id="otaBar"></div></div>
       <div id="otaMsg" class="msg"></div>
-
-      <div class="sep">Rollback</div>
-      <div class="row"><label>Other slot</label><span id="otaOther" class="value">—</span></div>
-      <div class="row"><button id="btnRollback" class="btn-full" disabled>Roll back to previous firmware</button></div>
+      <div class="small">BLE flashing is slow (about <span id="otaMin">?</span> min). Faster: <a id="otaDl" href="#" download>download the .bin</a> and flash via the AP web UI (hold boot 3 s).</div>
 
       <div class="collapsible">
-        <div class="sep" data-collapse="localbin">Flash a local .bin <span class="chev">▸</span></div>
-        <div class="collapse-content" id="collapse-localbin">
+        <div class="sep" data-collapse="otamore">Rollback & local file <span class="chev">▸</span></div>
+        <div class="collapse-content" id="collapse-otamore">
+          <div class="row">
+            <label>Version</label>
+            <select id="otaVersion"><option>Loading releases…</option></select>
+          </div>
+          <div class="row"><label>Other slot</label><span id="otaOther" class="value">-</span></div>
+          <div class="row"><button id="btnRollback" class="btn-full" disabled>Roll back to previous firmware</button></div>
           <div class="row"><label>Fallback file</label><input type="file" id="otaFile" accept=".bin"></div>
-          <div class="msg">For offline installs — releases are normally pulled from GitHub automatically.</div>
+          <div class="msg">For offline installs - releases normally load from GitHub automatically.</div>
         </div>
       </div>
     </section>
@@ -162,13 +164,6 @@
     <div class="collapse-content" id="collapse-log">
       <div id="log" class="log"></div>
     </div>
-  </div>
-
-  <div class="telemetry">
-    <div class="tel-item"><div class="tel-label">RX</div><div class="tel-val" id="rx">—</div><div class="tel-unit">%</div></div>
-    <div class="tel-item"><div class="tel-label">Rate</div><div class="tel-val" id="rate">—</div><div class="tel-unit">°/s</div></div>
-    <div class="tel-item"><div class="tel-label">Heading</div><div class="tel-val" id="heading">—</div><div class="tel-unit">°</div></div>
-    <div class="tel-item"><div class="tel-label">Output</div><div class="tel-val" id="output">—</div><div class="tel-unit">%</div></div>
   </div>
 </div>
 <script src="app.js"></script>

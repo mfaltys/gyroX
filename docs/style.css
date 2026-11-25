@@ -1,4 +1,4 @@
-/* gyroX BLE config — styled to match the AP web UI */
+/* gyroX BLE config - styled to match the AP web UI */
 
 * { box-sizing: border-box; }
 
@@ -110,6 +110,16 @@ input:checked + .sl:after { transform: translateX(20px); }
 .log .ok { color: #7ee2a8; }
 .log .err { color: #ff8484; }
 .log .info { color: var(--muted); }
+
+
+/* OTA status box: green when up to date, red when an update is available */
+.ota-box { border: 1px solid var(--border); border-radius: 10px; padding: 4px 8px; margin: 10px 0; }
+.ota-box .row { margin: 4px 0; padding: 4px 2px; }
+.ota-box.ok { border-color: #22c55e; }
+.ota-box.ok #otaState { color: #7ee2a8; }
+.ota-box.update { border-color: #ef4444; }
+.ota-box.update #otaState { color: #ff9b9b; }
+.small a { color: var(--accent); }
 
 /* OTA rows */
 .value { font-size: 13px; font-weight: 600; color: var(--text); text-align: right; word-break: break-all; }

@@ -1,4 +1,4 @@
-/* gyroX Config — Web Bluetooth client, styled like the AP web UI.
+/* gyroX Config - Web Bluetooth client, styled like the AP web UI.
  *
  * BLE service: 0000A100-0000-1000-8000-00805F9B34FB
  *   0xA101 DEVICE_INFO  READ
@@ -16,6 +16,9 @@ const CHR_OTAD = '0000a104-0000-1000-8000-00805f9b34fb';
 
 const MTU_CHUNK   = 480;  // OTA data bytes per WRITE (device MTU is 517)
 const CHUNK_DELAY = 15;   // ms between OTA chunks (flow control)
+// Measured over BLE on a real device: 1,248,368 bytes in ~409 s (~3 KB/s).
+// The bottleneck is Chrome's per-write GATT latency, not the radio.
+const OTA_BYTES_PER_SEC = 3000;
 
 function el(id) { return document.getElementById(id); }
 
@@ -25,7 +28,7 @@ let chrInfo = null, chrCfg = null, chrOtac = null, chrOtad = null;
 let notifyResolve = null, notifyBuf = '';
 let connected = false;
 let otaBusy = false;
-let connGen = 0;      // generation token — cancels superseded connect attempts
+let connGen = 0;      // generation token - cancels superseded connect attempts
 let deviceVersion = null;   // firmware version reported by the device
 let releases = [];          // GitHub releases, newest first
 
@@ -56,7 +59,7 @@ function sendCommand(cmd, timeoutMs) {
   if (!connected) return Promise.reject(new Error('Not connected'));
   const tmo = timeoutMs || 5000;
   return new Promise((resolve, reject) => {
-    notifyBuf = '';   // start clean — a lost fragment must not poison this response
+    notifyBuf = '';   // start clean - a lost fragment must not poison this response
     notifyResolve = (text) => {
       try { resolve(JSON.parse(text)); }
       catch (e) { reject(new Error('Bad JSON from device')); }
@@ -75,7 +78,7 @@ function sendCommand(cmd, timeoutMs) {
 
 function onChrCfgValue(value) {
   notifyBuf += new TextDecoder().decode(value.buffer);
-  /* Responses always start with '{'. If not, a fragment was lost — drop the
+  /* Responses always start with '{'. If not, a fragment was lost - drop the
    * buffer so the next command's response starts clean instead of every
    * future parse failing on concatenated garbage. */
   if (notifyBuf.charCodeAt(0) !== 0x7b) { notifyBuf = ''; return; }
@@ -97,22 +100,20 @@ function setConnectedUI(on) {
     deviceVersion = null;
     el('ver').textContent = 'BLE';
     el('ver').classList.remove('connected');
-    el('otaInstalled').textContent = '—';
-    setStatus('Not connected — tap Connect and pick gyroX.');
-    ['rx', 'rate', 'heading', 'output'].forEach(id => { el(id).textContent = '—'; });
+    el('otaInstalled').textContent = '-';
+    setStatus('Not connected - tap Connect and pick gyroX.');
   }
   el('btnSave').disabled = !on;
   el('btnCal').disabled = !on;
   el('btnLoad').disabled = !on;
   el('btnRollback').disabled = !on;
-  el('btnOta').disabled = true;   // updateOtaMeta() enables it once a release is selected
-  if (on) updateOtaMeta();
+  updateOtaStatus();
 }
 
 function cfgNotifyHandler(ev) { onChrCfgValue(ev.target.value); }
 
 async function connect() {
-  if (!navigator.bluetooth) { log('Web Bluetooth not available — use Chrome/Edge on Android', 'err'); return; }
+  if (!navigator.bluetooth) { log('Web Bluetooth not available - use Chrome/Edge on Android', 'err'); return; }
   if (connected) { disconnect(); return; }
   try {
     log('Requesting device…');
@@ -129,7 +130,7 @@ async function connect() {
 
 /* GATT setup shared by first connect and stall auto-reconnect.
  * Retries up to 3 times: Android Chrome sporadically drops the link right
- * after connect() resolves (status-133-style failure) — the error surfaces
+ * after connect() resolves (status-133-style failure) - the error surfaces
  * as "GATT Server is disconnected. Cannot retrieve services." on the very
  * first getPrimaryService(). A plain second attempt almost always lands. */
 async function openConnection() {
@@ -157,7 +158,7 @@ async function openConnection() {
       lastErr = e;
       if (gen !== connGen) return false;
       if (attempt < 3) {
-        log('Attempt ' + attempt + ' failed: ' + e.message + ' — retrying…', 'err');
+        log('Attempt ' + attempt + ' failed: ' + e.message + ' - retrying…', 'err');
         await sleep(800);
       }
     }
@@ -177,7 +178,7 @@ async function openConnection() {
     log('Firmware ' + deviceVersion, 'ok');
   } catch (e) { /* pill stays generic */ }
   await loadCfg();
-  /* One-shot health check — a snapshot, not a live feed (see refreshState). */
+  /* One-shot health check - a snapshot, not a live feed (see refreshState). */
   try { await refreshState(); }
   catch (e) { log('State read failed: ' + e.message, 'err'); }
   /* OTA: populate the releases dropdown + rollback row (both non-fatal) */
@@ -187,9 +188,9 @@ async function openConnection() {
 }
 
 function onDisconnected() {
-  if (!connected) return;   // dropped during setup — the retry loop recovers
+  if (!connected) return;   // dropped during setup - the retry loop recovers
   log('Device disconnected', 'err');
-  if (otaBusy) { el('otaMsg').textContent = 'Connection lost — device rebooting.'; otaBusy = false; }
+  if (otaBusy) { el('otaMsg').textContent = 'Connection lost - device rebooting.'; otaBusy = false; }
   device = null; server = null;
   setConnectedUI(false);
 }
@@ -330,7 +331,7 @@ el('mProfile').addEventListener('change', () => {
   el('mSmin').value = pre.servo_min_us;
   el('mScenter').value = pre.servo_center_us;
   el('mSmax').value = pre.servo_max_us;
-  el('mMsg').textContent = pre.name + ' preset loaded — press Save to apply';
+  el('mMsg').textContent = pre.name + ' preset loaded - press Save to apply';
 });
 const flipToCustom = () => { el('mProfile').value = 3; };
 ['mGain', 'mDeadband', 'mTrim', 'mSmin', 'mScenter', 'mSmax'].forEach(id => {
@@ -375,11 +376,11 @@ el('mLedsBright').addEventListener('change', () => { if (connected) saveCfg(); }
 /* Firmware binaries live on GitHub Releases (no manifest file): one API
  * call lists every release with tag, size, date and notes. Assets are
  * fetched via the API's octet-stream endpoint, which carries CORS headers
- * (the plain browser_download_url does NOT — never fetch that from a page). */
+ * (the plain browser_download_url does NOT - never fetch that from a page). */
 
 const REPO = 'mfaltys/gyroX';
 /* Firmware binaries are served from the unixvoid-builds S3 bucket (the
- * .s3.amazonaws.com form implies us-east-1 — same bucket scalex uses).
+ * .s3.amazonaws.com form implies us-east-1 - same bucket scalex uses).
  * GitHub release-asset downloads are NOT CORS-accessible from a browser,
  * so Releases act as the version index and S3 serves the bytes. */
 const FIRMWARE_BASE_URL = 'https://unixvoid-builds.s3.amazonaws.com/gyrox';
@@ -426,12 +427,12 @@ async function loadOtaVersions() {
   } catch (e) {
     sel.innerHTML = '<option>Release list unavailable</option>';
     log('Release list failed: ' + e.message, 'err');
-    updateOtaMeta();
+    updateOtaStatus();
     return;
   }
   if (!releases.length) {
     sel.innerHTML = '<option>No releases published yet</option>';
-    updateOtaMeta();
+    updateOtaStatus();
     return;
   }
   sel.innerHTML = '';
@@ -442,38 +443,54 @@ async function loadOtaVersions() {
     sel.appendChild(o);
   });
   sel.value = '0';
-  updateOtaMeta();
+  updateOtaStatus();
 }
 
-function updateOtaMeta() {
-  const r = releases[Number(el('otaVersion').value || 0)];
+function updateOtaStatus() {
   const btn = el('btnOta');
-  btn.disabled = !connected || !r;
-  if (!r) { el('otaMeta').textContent = ''; return; }
+  const box = el('otaBox');
+  const latest = releases[0];
+  el('otaLatest').textContent = latest ? latest.tag : '-';
+  btn.disabled = !connected || !latest;
+
+  if (!connected) {
+    box.className = 'ota-box';
+    el('otaState').textContent = 'Connect to check for updates.';
+    return;
+  }
+  if (!latest) {
+    box.className = 'ota-box';
+    el('otaState').textContent = 'No releases published yet.';
+    return;
+  }
+
+  /* Selected version (dropdown defaults to latest) */
+  const r = releases[Number(el('otaVersion').value || 0)];
   const dev = parseSemver(deviceVersion);
   const rel = parseSemver(r.tag);
-  let badge = '';
+  box.classList.remove('ok', 'update');
   if (dev && rel) {
     const c = cmpSemver(rel, dev);
     if (c > 0) {
-      badge = ' — update available!';
+      box.classList.add('update');
+      el('otaState').textContent = 'Update available - ' + r.tag;
       btn.textContent = 'Update to ' + r.tag;
-      btn.classList.add('ota-update');
     } else if (c === 0) {
+      box.classList.add('ok');
+      el('otaState').textContent = deviceVersion === r.tag ? 'Up to date' : 'Up to date (dev build of ' + r.tag + ')';
       btn.textContent = 'Re-flash ' + r.tag;
-      btn.classList.remove('ota-update');
     } else {
-      badge = ' — selected version is OLDER than installed';
+      box.classList.add('update');
+      el('otaState').textContent = 'Selected version is older than installed';
       btn.textContent = 'Downgrade to ' + r.tag;
-      btn.classList.remove('ota-update');
     }
   } else {
+    box.classList.add('update');
+    el('otaState').textContent = 'Installed version unknown - update recommended';
     btn.textContent = 'Flash ' + r.tag;
-    btn.classList.remove('ota-update');
   }
-  el('otaMeta').textContent = r.date + ' · ' + (r.size / 1048576).toFixed(2) + ' MB · ≈' +
-    Math.max(1, Math.round(r.size / 12000 / 60)) + ' min over BLE' + badge +
-    (r.notes ? ' · ' + r.notes : '');
+  el('otaMin').textContent = String(Math.max(1, Math.round(r.size / OTA_BYTES_PER_SEC / 60)));
+  el('otaDl').href = FIRMWARE_BASE_URL + '/' + r.tag + '/app.bin';
 }
 
 async function downloadFirmware(rel) {
@@ -507,8 +524,8 @@ async function rollbackNow() {
   if (!confirm('Roll back to the firmware in the other slot? The device will reboot into it.')) return;
   el('btnRollback').disabled = true;
   try { await sendCommand({ cmd: 'rollback' }, 3000); }
-  catch (e) { /* the reboot races the ack — expected */ }
-  el('otaMsg').textContent = 'Rollback requested — device rebooting into previous firmware…';
+  catch (e) { /* the reboot races the ack - expected */ }
+  el('otaMsg').textContent = 'Rollback requested - device rebooting into previous firmware…';
   log('Rollback requested', 'ok');
 }
 
@@ -520,7 +537,7 @@ el('otaFile').addEventListener('change', () => {
     el('btnOta').disabled = !connected;
   } else {
     el('btnOta').textContent = 'Update & flash over BLE';
-    updateOtaMeta();
+    updateOtaStatus();
   }
 });
 
@@ -551,12 +568,12 @@ async function otaUpload() {
       log('Download failed: ' + e.message, 'err');
       return;
     }
-    /* CI always uploads a .sha256 sidecar next to the .bin — verify it */
+    /* CI always uploads a .sha256 sidecar next to the .bin - verify it */
     el('otaMsg').textContent = 'Verifying SHA-256…';
     try {
       if (!(await verifySha256(bytes, rel))) {
-        el('otaMsg').textContent = 'SHA-256 mismatch — download corrupted, aborted.';
-        log('SHA-256 mismatch — aborted', 'err');
+        el('otaMsg').textContent = 'SHA-256 mismatch - download corrupted, aborted.';
+        log('SHA-256 mismatch - aborted', 'err');
         return;
       }
       log('SHA-256 verified', 'ok');
@@ -566,7 +583,9 @@ async function otaUpload() {
       return;
     }
   }
-  if (!confirm('Flash ' + label + ' (' + (bytes.length / 1048576).toFixed(2) + ' MB, ≈2 min over BLE)? Keep the car parked.')) return;
+  if (!confirm('Flash ' + label + ' (' + (bytes.length / 1048576).toFixed(2) + ' MB, about ' +
+               Math.max(1, Math.round(bytes.length / OTA_BYTES_PER_SEC / 60)) +
+               ' min over BLE)? Do not power off the device.')) return;
 
   otaBusy = true;
   el('btnOta').disabled = true;
@@ -585,15 +604,15 @@ async function otaUpload() {
       await chrOtad.writeValue(bytes.slice(off, end));
       const pct = Math.round((end / bytes.length) * 100);
       el('otaBar').style.width = pct + '%';
-      el('otaMsg').textContent = 'Flashing ' + pct + '% — do not power off!';
+      el('otaMsg').textContent = 'Flashing ' + pct + '% - do not power off!';
       if (end < bytes.length) await new Promise(r => setTimeout(r, CHUNK_DELAY));
     }
     log('OTA stream complete, finalizing…');
 
     await ctrl({ cmd: 'complete' });
     el('otaBar').style.width = '100%';
-    el('otaMsg').textContent = 'Update written — rebooting into drive mode (hold boot 3 s to return here)';
-    log('OTA complete — device rebooting', 'ok');
+    el('otaMsg').textContent = 'Update written - rebooting into drive mode (hold boot 3 s to return here)';
+    log('OTA complete - device rebooting', 'ok');
   } catch (e) {
     el('otaMsg').textContent = 'OTA failed: ' + e.message;
     log('OTA failed: ' + e.message, 'err');
@@ -601,7 +620,7 @@ async function otaUpload() {
   } finally {
     otaBusy = false;
     el('btnOta').disabled = !connected;
-    updateOtaMeta();
+    updateOtaStatus();
   }
 }
 
@@ -612,10 +631,6 @@ async function otaUpload() {
  * lives on the AP-mode web UI over HTTP. */
 async function refreshState() {
   const s = await sendCommand({ cmd: 'get_state' }, 2000);
-  el('rx').textContent = s.rx;
-  el('rate').textContent = s.rate_z;
-  el('heading').textContent = Number(s.heading).toFixed(1);
-  el('output').textContent = s.output;
   setStatus((s.rx_valid ? 'RX OK' : 'NO RX!') + '  ·  gyro ' + (s.gyro_ready ? 'OK' : '---') +
             '  ·  snapshot', s.rx_valid ? '' : 'err');
 }
@@ -629,11 +644,11 @@ el('btnLoad').addEventListener('click', loadCfg);
 el('btnCal').addEventListener('click', calibrate);
 el('btnResetHead').addEventListener('click', resetHead);
 el('btnOta').addEventListener('click', otaUpload);
-el('otaVersion').addEventListener('change', updateOtaMeta);
+el('otaVersion').addEventListener('change', updateOtaStatus);
 el('btnRollback').addEventListener('click', rollbackNow);
 
 /* ---------------------------- Init -------------------------------- */
 setConnectedUI(false);
 log('Ready. Tap Connect and pick gyroX.');
-if (!navigator.bluetooth) log('Web Bluetooth not available in this browser — use Chrome/Edge on Android.', 'err');
+if (!navigator.bluetooth) log('Web Bluetooth not available in this browser - use Chrome/Edge on Android.', 'err');
 

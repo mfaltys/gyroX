@@ -1,4 +1,4 @@
-/* gyroX — BLE configuration + OTA over NimBLE (ESP-IDF 6.0.1, ESP32-C3)
+/* gyroX - BLE configuration + OTA over NimBLE (ESP-IDF 6.0.1, ESP32-C3)
  *
  * GATT service: 0000A100-0000-1000-8000-00805F9B34FB
  *
@@ -9,7 +9,7 @@
  *
  * The CONFIG channel reuses config_set_from_json() so one JSON schema serves
  * both the HTTP web UI and the BLE client. OTA reuses esp_ota_begin/write/end
- * exactly like main/web.c — same inactive-slot swap, same bootloader fallback.
+ * exactly like main/web.c - same inactive-slot swap, same bootloader fallback.
  *
  * WiFi/BLE coexistence: ble_stop() is called from web_start() before the AP
  * comes up, so BLE and WiFi never run at the same time.
@@ -108,7 +108,7 @@ static struct {
 typedef struct {
     uint16_t conn;
     uint16_t attr;
-    char    *json;   /* owned by the worker — freed after send */
+    char    *json;   /* owned by the worker - freed after send */
 } ble_reply_t;
 
 static QueueHandle_t s_reply_queue;
@@ -171,7 +171,7 @@ static int chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
             rc = os_mbuf_append(ctxt->om, buf, n);
             return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
         }
-        if (chr_id == 2) { /* CONFIG — dump current config as JSON */
+        if (chr_id == 2) { /* CONFIG - dump current config as JSON */
             cJSON *r = cJSON_CreateObject();
             cJSON_AddNumberToObject(r, "gyro_gain", s_cfg.gyro_gain);
             cJSON_AddNumberToObject(r, "gyro_mode", s_cfg.gyro_mode);
@@ -209,7 +209,7 @@ static int chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
         os_mbuf_copydata(ctxt->om, 0, len, buf);
         buf[len] = '\0';
 
-        if (chr_id == 2) { /* CONFIG — JSON command */
+        if (chr_id == 2) { /* CONFIG - JSON command */
             cJSON *root = cJSON_Parse((char *)buf);
             if (!root || !cJSON_IsObject(root)) {
                 if (root) cJSON_Delete(root);
@@ -314,7 +314,7 @@ static int chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
                     notify_json(conn_handle, chr_cfg_handle, json);
                     free(json);
                 }
-                cJSON_Delete(r);   /* was missing — leaked every 200ms poll until heap exhausted */
+                cJSON_Delete(r);   /* was missing - leaked every 200ms poll until heap exhausted */
                 return 0;
             }
 
@@ -348,10 +348,10 @@ static int chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
 
             if (strcmp(cmd_s, "rollback") == 0) {
                 cJSON_Delete(root);
-                ESP_LOGW(TAG, "Rollback requested via BLE — rebooting into the previous image");
+                ESP_LOGW(TAG, "Rollback requested via BLE - rebooting into the previous image");
                 notify_json(conn_handle, chr_cfg_handle, "{\"ok\":true,\"rollback\":true}");
                 /* Let the (deferred) ack reach the client, then invalidate the
-                 * running image and reboot — the bootloader picks the other
+                 * running image and reboot - the bootloader picks the other
                  * slot, which still holds the previous firmware. */
                 vTaskDelay(pdMS_TO_TICKS(200));
                 esp_ota_mark_app_invalid_rollback_and_reboot();
@@ -364,7 +364,7 @@ static int chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
             return 0;
         }
 
-        if (chr_id == 3) { /* OTA_CTRL — JSON control */
+        if (chr_id == 3) { /* OTA_CTRL - JSON control */
             cJSON *root = cJSON_Parse((char *)buf);
             if (!root || !cJSON_IsObject(root)) {
                 if (root) cJSON_Delete(root);
@@ -429,6 +429,8 @@ static int chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
                 bool in_progress = s_ota.in_progress;
                 esp_ota_handle_t ota = s_ota.ota;
                 const esp_partition_t *part = s_ota.part;
+                int32_t written = s_ota.written_size;
+                int32_t total = s_ota.total_size;
                 memset(&s_ota, 0, sizeof(s_ota));
                 xSemaphoreGive(s_ota_mutex);
 
@@ -451,8 +453,8 @@ static int chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
                     return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
                 }
 
-                ESP_LOGI(TAG, "OTA complete: %d bytes -> %s, rebooting",
-                         (int)part->size, part->label);
+                ESP_LOGI(TAG, "OTA complete: %d/%d bytes -> %s, rebooting",
+                         (int)written, (int)total, part->label);
                 cJSON_Delete(root);
 
                 if (conn_handle != BLE_HS_CONN_HANDLE_NONE) {
@@ -468,7 +470,7 @@ static int chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
             return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
         }
 
-        if (chr_id == 4) { /* OTA_DATA — raw binary, WRITE_NO_RSP */
+        if (chr_id == 4) { /* OTA_DATA - raw binary, WRITE_NO_RSP */
             xSemaphoreTake(s_ota_mutex, portMAX_DELAY);
             bool ok = s_ota.in_progress && s_ota.part != NULL;
             esp_ota_handle_t ota = s_ota.ota;
@@ -505,7 +507,7 @@ static int chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
 }
 
 /* ------------------------------------------------------------------ */
-/* GATT registration callback — capture assigned value handles        */
+/* GATT registration callback - capture assigned value handles        */
 /* ------------------------------------------------------------------ */
 
 static void gatt_register_cb(struct ble_gatt_register_ctxt *ctxt, void *arg)
@@ -683,13 +685,13 @@ esp_err_t ble_start(void)
         return ESP_ERR_INVALID_STATE;
     }
 
-    /* No passkey display available — use Just Works pairing */
+    /* No passkey display available - use Just Works pairing */
     ble_hs_cfg.sm_io_cap = BLE_SM_IOACT_NONE;
     ble_hs_cfg.sm_bonding = 0;
     ble_hs_cfg.sm_mitm = 0;
     ble_hs_cfg.sm_sc = 0;
 
-    /* Capture the value handles NimBLE assigns during GATT registration —
+    /* Capture the value handles NimBLE assigns during GATT registration -
      * without these, notify_json() would target handle 0 and every JSON
      * response would be lost. */
     ble_hs_cfg.gatts_register_cb = gatt_register_cb;
