@@ -25,10 +25,7 @@ let chrInfo = null, chrCfg = null, chrOtac = null, chrOtad = null;
 let notifyResolve = null, notifyBuf = '';
 let connected = false;
 let otaBusy = false;
-let pollBusy = false;
-let pollGen = 0;      // generation token — kills stale polling loops
 let connGen = 0;      // generation token — cancels superseded connect attempts
-let stallCount = 0;   // consecutive poll failures → auto-reconnect
 
 /* ---------------------------- Log --------------------------------- */
 function esc(s) {
@@ -169,15 +166,14 @@ async function openConnection() {
     if (info.version) el('ver').textContent = 'fw: ' + info.version;
     log('Firmware ' + info.version, 'ok');
   } catch (e) { /* pill stays generic */ }
-  stallCount = 0;
   await loadCfg();
-  startPolling();
+  /* One-shot health check — a snapshot, not a live feed (see refreshState). */
+  try { await refreshState(); }
+  catch (e) { log('State read failed: ' + e.message, 'err'); }
   return true;
 }
 
 function onDisconnected() {
-  pollGen++;          // stop any polling loops
-  pollBusy = false;
   if (!connected) return;   // dropped during setup — the retry loop recovers
   log('Device disconnected', 'err');
   if (otaBusy) { el('otaMsg').textContent = 'Connection lost — device rebooting.'; otaBusy = false; }
@@ -415,60 +411,22 @@ async function otaUpload() {
   }
 }
 
-/* ---------------------- Telemetry polling ------------------------- */
-async function pollOnce() {
-  const s = await sendCommand({ cmd: 'get_state' }, 1500);
+/* ------------------ Telemetry (one-shot snapshot) ------------------ */
+/* No continuous polling: the GATT channel goes quiet between user actions,
+ * which keeps Android Chrome's flaky GATT plumbing out of the picture. The
+ * status line is a connect-time health snapshot; live tuning telemetry
+ * lives on the AP-mode web UI over HTTP. */
+async function refreshState() {
+  const s = await sendCommand({ cmd: 'get_state' }, 2000);
   el('rx').textContent = s.rx;
   el('rate').textContent = s.rate_z;
   el('heading').textContent = Number(s.heading).toFixed(1);
   el('output').textContent = s.output;
-  setStatus((s.rx_valid ? 'RX OK' : 'NO RX!') + '  ·  gyro ' + (s.gyro_ready ? 'OK' : '---'),
-            s.rx_valid ? '' : 'err');
+  setStatus((s.rx_valid ? 'RX OK' : 'NO RX!') + '  ·  gyro ' + (s.gyro_ready ? 'OK' : '---') +
+            '  ·  snapshot', s.rx_valid ? '' : 'err');
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-/* Single loop per connection "generation". The gen token guarantees stale
- * loops exit after a reconnect instead of multiplying chains. */
-async function pollingLoop(gen) {
-  while (connected && gen === pollGen) {
-    if (!pollBusy) {
-      pollBusy = true;
-      try {
-        await pollOnce();
-        stallCount = 0;
-      } catch (e) {
-        stallCount++;
-        if (stallCount === 1) log('Poll missed (' + e.message + ') — watching…', 'err');
-        if (stallCount >= 5) {
-          /* Link is wedged (e.g. silent drop) — GATT ops queue forever and
-           * telemetry freezes. Drop and reconnect automatically. */
-          stallCount = 0;
-          pollBusy = false;
-          log('Connection stalled — reconnecting…', 'err');
-          const dev = device;
-          if (dev && dev.gatt.connected) try { dev.gatt.disconnect(); } catch (_) {}
-          setTimeout(() => {
-            if (!dev) return;
-            device = dev;
-            openConnection().catch(() => {
-              log('Reconnect failed — tap Connect to retry.', 'err');
-              setConnectedUI(false);
-            });
-          }, 1000);
-          return;
-        }
-      }
-      pollBusy = false;
-    }
-    await sleep(200);
-  }
-}
-
-function startPolling() {
-  pollGen++;
-  pollingLoop(pollGen);
-}
 
 /* --------------------------- Wiring ------------------------------- */
 el('btnConn').addEventListener('click', connect);
