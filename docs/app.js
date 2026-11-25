@@ -122,6 +122,7 @@ function setConnectedUI(on) {
   el('btnCal').disabled = !on;
   el('btnLoad').disabled = !on;
   el('btnRollback').disabled = !on;
+  el('btnSaveName').disabled = !on;
   updateOtaStatus();
 }
 
@@ -243,6 +244,20 @@ function applyCfg(c) {
   el('mLedsBright').value = (c.leds_bright === undefined ? 100 : c.leds_bright);
   el('vBright').textContent = el('mLedsBright').value;
   el('fDevName').value = c.device_name || '';
+}
+
+/* Saves just the device name: BLE picker shows it after the device
+ * re-advertises (i.e. after disconnect), AP name after reboot. */
+async function saveDeviceName() {
+  if (!connected) return;
+  const name = el('fDevName').value.trim();
+  try {
+    const r = await sendCommand({ cmd: 'set_config', device_name: name });
+    if (!r.ok) throw new Error(r.error || 'save failed');
+    log('Device name saved: "' + (name || 'gyroX') + '" - BLE name after reconnect, AP name after reboot', 'ok');
+  } catch (e) {
+    log('Name save failed: ' + e.message, 'err');
+  }
 }
 
 /* Header pill: device name + firmware version (matters with multiple cars) */
@@ -726,6 +741,7 @@ el('btnCal').addEventListener('click', calibrate);
 el('btnResetHead').addEventListener('click', resetHead);
 el('btnOta').addEventListener('click', otaUpload);
 el('btnFlashVersion').addEventListener('click', otaUpload);
+el('btnSaveName').addEventListener('click', saveDeviceName);
 el('otaVersion').addEventListener('change', updateOtaStatus);
 el('btnRollback').addEventListener('click', rollbackNow);
 

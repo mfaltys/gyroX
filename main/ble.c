@@ -682,14 +682,15 @@ static int gap_event_cb(struct ble_gap_event *event, void *arg)
         ESP_LOGI(TAG, "BLE client disconnected");
         s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
         /* Abort an in-flight OTA: a stale handle would block the next
-         * esp_ota_begin until reboot. */
-        xSemaphoreTake(s_ota_mutex, portMAX_DELAY);
+         * esp_ota_begin until reboot. Mutex is guarded - it is created in
+         * ble_start(), but this path must never assume anything. */
+        if (s_ota_mutex != NULL) xSemaphoreTake(s_ota_mutex, portMAX_DELAY);
         if (s_ota.in_progress) {
             esp_ota_abort(s_ota.ota);
             memset(&s_ota, 0, sizeof(s_ota));
             ESP_LOGW(TAG, "OTA aborted - client disconnected mid-transfer");
         }
-        xSemaphoreGive(s_ota_mutex);
+        if (s_ota_mutex != NULL) xSemaphoreGive(s_ota_mutex);
         ble_advertise();
         break;
     default:
@@ -748,6 +749,13 @@ esp_err_t ble_start(void)
             return ESP_ERR_NO_MEM;
         }
         xTaskCreate(reply_task, "ble_reply", 3072, NULL, 5, NULL);
+    }
+
+    /* OTA state mutex - created EAGERLY: the disconnect path takes it even
+     * when no OTA was ever started, and a NULL queue handle asserts inside
+     * FreeRTOS (crash + reboot on every disconnect). */
+    if (s_ota_mutex == NULL) {
+        s_ota_mutex = xSemaphoreCreateMutex();
     }
 
     /* Start the host task */

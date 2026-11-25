@@ -108,7 +108,10 @@
       <div class="sep">Device name</div>
       <div class="row">
         <label>Device name</label>
-        <input type="text" id="mDevName" maxlength="20" placeholder="unnamed">
+        <span class="ver-line">
+          <input type="text" id="mDevName" maxlength="20" placeholder="unnamed">
+          <button id="btnSaveName" class="btn-mini">Save</button>
+        </span>
       </div>
       <div class="row plain">
         <label>This AP</label>
@@ -333,6 +336,11 @@ el('btnOta').onclick = () => {
   xhr.send(f);
 };
 el('btnSave').onclick = saveCfg;
+el('btnSaveName').onclick = async () => {
+  await saveCfg();
+  el('btnSaveName').textContent = 'Saved';
+  setTimeout(() => { el('btnSaveName').textContent = 'Save'; }, 1500);
+};
 el('btnLoad').onclick = loadCfg;
 el('btnCal').onclick = calibrate;
 el('btnResetHead').onclick = resetHead;
