@@ -110,3 +110,10 @@ input:checked + .sl:after { transform: translateX(20px); }
 .log .ok { color: #7ee2a8; }
 .log .err { color: #ff8484; }
 .log .info { color: var(--muted); }
+
+/* OTA rows */
+.value { font-size: 13px; font-weight: 600; color: var(--text); text-align: right; word-break: break-all; }
+.btn-full.ota-update { background: var(--accent); color: #002233; border-color: var(--accent); font-weight: 700; text-align: center; }
+.btn-full.ota-update:hover:not(:disabled) { background: #4ecbff; }
+
+.log .info { color: var(--muted); }

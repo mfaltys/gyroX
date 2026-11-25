@@ -26,6 +26,8 @@ let notifyResolve = null, notifyBuf = '';
 let connected = false;
 let otaBusy = false;
 let connGen = 0;      // generation token — cancels superseded connect attempts
+let deviceVersion = null;   // firmware version reported by the device
+let releases = [];          // GitHub releases, newest first
 
 /* ---------------------------- Log --------------------------------- */
 function esc(s) {
@@ -92,15 +94,19 @@ function setConnectedUI(on) {
   el('btnConn').textContent = on ? 'Disconnect' : 'Connect';
   el('btnConn').classList.toggle('disconnect', on);
   if (!on) {
+    deviceVersion = null;
     el('ver').textContent = 'BLE';
     el('ver').classList.remove('connected');
+    el('otaInstalled').textContent = '—';
     setStatus('Not connected — tap Connect and pick gyroX.');
     ['rx', 'rate', 'heading', 'output'].forEach(id => { el(id).textContent = '—'; });
   }
   el('btnSave').disabled = !on;
   el('btnCal').disabled = !on;
   el('btnLoad').disabled = !on;
-  el('btnOta').disabled = !on || !el('otaFile').files.length;
+  el('btnRollback').disabled = !on;
+  el('btnOta').disabled = true;   // updateOtaMeta() enables it once a release is selected
+  if (on) updateOtaMeta();
 }
 
 function cfgNotifyHandler(ev) { onChrCfgValue(ev.target.value); }
@@ -163,13 +169,20 @@ async function openConnection() {
   log('Connected', 'ok');
   try {
     const info = JSON.parse(new TextDecoder().decode((await chrInfo.readValue()).buffer));
-    if (info.version) el('ver').textContent = 'fw: ' + info.version;
-    log('Firmware ' + info.version, 'ok');
+    deviceVersion = info.version || null;
+    if (deviceVersion) {
+      el('ver').textContent = 'fw: ' + deviceVersion;
+      el('otaInstalled').textContent = deviceVersion;
+    }
+    log('Firmware ' + deviceVersion, 'ok');
   } catch (e) { /* pill stays generic */ }
   await loadCfg();
   /* One-shot health check — a snapshot, not a live feed (see refreshState). */
   try { await refreshState(); }
   catch (e) { log('State read failed: ' + e.message, 'err'); }
+  /* OTA: populate the releases dropdown + rollback row (both non-fatal) */
+  loadOtaVersions();
+  getSlots();
   return true;
 }
 
@@ -358,15 +371,200 @@ el('mLedsBright').addEventListener('input', () => { el('vBright').textContent = 
 el('mLedsBright').addEventListener('change', () => { if (connected) saveCfg(); });
 
 
+/* ------------------ Releases / versioning -------------------------- */
+/* Firmware binaries live on GitHub Releases (no manifest file): one API
+ * call lists every release with tag, size, date and notes. Assets are
+ * fetched via the API's octet-stream endpoint, which carries CORS headers
+ * (the plain browser_download_url does NOT — never fetch that from a page). */
+
+const REPO = 'mfaltys/gyroX';
+
+function parseSemver(s) {
+  const m = /v?(\d+)\.(\d+)\.(\d+)/.exec(s || '');
+  return m ? [+m[1], +m[2], +m[3]] : null;
+}
+function cmpSemver(a, b) {
+  for (let i = 0; i < 3; i++) { if (a[i] !== b[i]) return a[i] - b[i]; }
+  return 0;
+}
+
+async function fetchReleases() {
+  let cached = null;
+  try { cached = JSON.parse(localStorage.getItem('gyroX_releases') || 'null'); } catch (e) { /* ignore */ }
+  if (cached && Date.now() - cached.t < 10 * 60 * 1000) return cached.list;
+  const res = await fetch('https://api.github.com/repos/' + REPO + '/releases?per_page=20',
+                          { headers: { Accept: 'application/vnd.github+json' } });
+  if (!res.ok) throw new Error('GitHub API ' + res.status);
+  const raw = await res.json();
+  const list = raw.filter(r => !r.draft).map(r => {
+    const bin = (r.assets || []).find(a => a.name.endsWith('.bin'));
+    if (!bin) return null;
+    const sha = (r.assets || []).find(a => a.name.endsWith('.sha256'));
+    return {
+      tag: r.tag_name,
+      date: (r.published_at || '').slice(0, 10),
+      size: bin.size,
+      binId: bin.id,
+      shaId: sha ? sha.id : null,
+      prerelease: !!r.prerelease,
+      notes: (r.body || '').split('\n').filter(l => l.trim()).slice(0, 2).join(' · '),
+    };
+  }).filter(Boolean);
+  try { localStorage.setItem('gyroX_releases', JSON.stringify({ t: Date.now(), list })); } catch (e) { /* ignore */ }
+  return list;
+}
+
+async function loadOtaVersions() {
+  const sel = el('otaVersion');
+  try {
+    releases = await fetchReleases();
+  } catch (e) {
+    sel.innerHTML = '<option>Release list unavailable</option>';
+    log('Release list failed: ' + e.message, 'err');
+    updateOtaMeta();
+    return;
+  }
+  if (!releases.length) {
+    sel.innerHTML = '<option>No releases published yet</option>';
+    updateOtaMeta();
+    return;
+  }
+  sel.innerHTML = '';
+  releases.forEach((r, i) => {
+    const o = document.createElement('option');
+    o.value = String(i);
+    o.textContent = r.tag + (i === 0 ? '  (latest)' : '') + (r.prerelease ? '  (pre-release)' : '');
+    sel.appendChild(o);
+  });
+  sel.value = '0';
+  updateOtaMeta();
+}
+
+function updateOtaMeta() {
+  const r = releases[Number(el('otaVersion').value || 0)];
+  const btn = el('btnOta');
+  btn.disabled = !connected || !r;
+  if (!r) { el('otaMeta').textContent = ''; return; }
+  const dev = parseSemver(deviceVersion);
+  const rel = parseSemver(r.tag);
+  let badge = '';
+  if (dev && rel) {
+    const c = cmpSemver(rel, dev);
+    if (c > 0) {
+      badge = ' — update available!';
+      btn.textContent = 'Update to ' + r.tag;
+      btn.classList.add('ota-update');
+    } else if (c === 0) {
+      btn.textContent = 'Re-flash ' + r.tag;
+      btn.classList.remove('ota-update');
+    } else {
+      badge = ' — selected version is OLDER than installed';
+      btn.textContent = 'Downgrade to ' + r.tag;
+      btn.classList.remove('ota-update');
+    }
+  } else {
+    btn.textContent = 'Flash ' + r.tag;
+    btn.classList.remove('ota-update');
+  }
+  el('otaMeta').textContent = r.date + ' · ' + (r.size / 1048576).toFixed(2) + ' MB · ≈' +
+    Math.max(1, Math.round(r.size / 12000 / 60)) + ' min over BLE' + badge +
+    (r.notes ? ' · ' + r.notes : '');
+}
+
+async function downloadFirmware(rel) {
+  const res = await fetch('https://api.github.com/repos/' + REPO + '/releases/assets/' + rel.binId,
+                          { headers: { Accept: 'application/octet-stream' } });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return new Uint8Array(await res.arrayBuffer());
+}
+
+async function verifySha256(bytes, rel) {
+  if (!rel.shaId) return true;   // no sidecar — the device validates the image anyway
+  const res = await fetch('https://api.github.com/repos/' + REPO + '/releases/assets/' + rel.shaId,
+                          { headers: { Accept: 'application/octet-stream' } });
+  if (!res.ok) throw new Error('SHA fetch HTTP ' + res.status);
+  const expected = (await res.text()).trim().split(/\s+/)[0].toLowerCase();
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  const actual = [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
+  return actual === expected;
+}
+
+async function getSlots() {
+  try {
+    const s = await sendCommand({ cmd: 'get_slots' }, 2000);
+    el('otaOther').textContent = s.other || 'empty';
+    el('btnRollback').disabled = !connected || !s.other;
+  } catch (e) {
+    el('otaOther').textContent = 'unknown';
+  }
+}
+
+async function rollbackNow() {
+  if (!connected) return;
+  if (!confirm('Roll back to the firmware in the other slot? The device will reboot into it.')) return;
+  el('btnRollback').disabled = true;
+  try { await sendCommand({ cmd: 'rollback' }, 3000); }
+  catch (e) { /* the reboot races the ack — expected */ }
+  el('otaMsg').textContent = 'Rollback requested — device rebooting into previous firmware…';
+  log('Rollback requested', 'ok');
+}
+
 /* ------------------------ OTA over BLE ---------------------------- */
 el('otaFile').addEventListener('change', () => {
-  el('btnOta').disabled = !connected || !el('otaFile').files.length;
+  const f = el('otaFile').files[0];
+  if (f) {
+    el('btnOta').textContent = 'Flash local file: ' + f.name;
+    el('btnOta').disabled = !connected;
+  } else {
+    el('btnOta').textContent = 'Update & flash over BLE';
+    updateOtaMeta();
+  }
 });
 
 async function otaUpload() {
+  if (otaBusy) return;
+  let bytes, label;
   const f = el('otaFile').files[0];
-  if (!f) { el('otaMsg').textContent = 'Choose a .bin file first'; return; }
-  if (!confirm('Flash ' + f.name + ' (' + (f.size / 1024).toFixed(1) + ' KB)? Keep the car parked.')) return;
+  if (f) {
+    /* Local fallback file */
+    label = f.name;
+    const ab = await new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result);
+      r.onerror = () => rej(r.error);
+      r.readAsArrayBuffer(f);
+    });
+    bytes = new Uint8Array(ab);
+  } else {
+    /* Selected GitHub release */
+    const rel = releases[Number(el('otaVersion').value || 0)];
+    if (!rel) { el('otaMsg').textContent = 'No release selected'; return; }
+    label = rel.tag;
+    el('otaMsg').textContent = 'Downloading ' + rel.tag + '…';
+    try {
+      bytes = await downloadFirmware(rel);
+    } catch (e) {
+      el('otaMsg').textContent = 'Download failed: ' + e.message;
+      log('Download failed: ' + e.message, 'err');
+      return;
+    }
+    if (rel.shaId) {
+      el('otaMsg').textContent = 'Verifying SHA-256…';
+      try {
+        if (!(await verifySha256(bytes, rel))) {
+          el('otaMsg').textContent = 'SHA-256 mismatch — download corrupted, aborted.';
+          log('SHA-256 mismatch — aborted', 'err');
+          return;
+        }
+        log('SHA-256 verified', 'ok');
+      } catch (e) {
+        el('otaMsg').textContent = 'SHA-256 check failed: ' + e.message;
+        log('SHA check failed: ' + e.message, 'err');
+        return;
+      }
+    }
+  }
+  if (!confirm('Flash ' + label + ' (' + (bytes.length / 1048576).toFixed(2) + ' MB, ≈2 min over BLE)? Keep the car parked.')) return;
 
   otaBusy = true;
   el('btnOta').disabled = true;
@@ -375,13 +573,6 @@ async function otaUpload() {
 
   const ctrl = (o) => chrOtac.writeValue(new TextEncoder().encode(JSON.stringify(o)));
   try {
-    const ab = await new Promise((res, rej) => {
-      const r = new FileReader();
-      r.onload = () => res(r.result);
-      r.onerror = () => rej(r.error);
-      r.readAsArrayBuffer(f);
-    });
-    const bytes = new Uint8Array(ab);
     log('OTA begin: ' + bytes.length + ' bytes');
 
     await ctrl({ cmd: 'begin', size: bytes.length });
@@ -408,6 +599,7 @@ async function otaUpload() {
   } finally {
     otaBusy = false;
     el('btnOta').disabled = !connected;
+    updateOtaMeta();
   }
 }
 
@@ -435,6 +627,8 @@ el('btnLoad').addEventListener('click', loadCfg);
 el('btnCal').addEventListener('click', calibrate);
 el('btnResetHead').addEventListener('click', resetHead);
 el('btnOta').addEventListener('click', otaUpload);
+el('otaVersion').addEventListener('change', updateOtaMeta);
+el('btnRollback').addEventListener('click', rollbackNow);
 
 /* ---------------------------- Init -------------------------------- */
 setConnectedUI(false);

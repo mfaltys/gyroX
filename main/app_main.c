@@ -24,6 +24,7 @@
 
 #include <driver/gpio.h>
 #include <esp_log.h>
+#include <esp_ota_ops.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
@@ -107,6 +108,15 @@ void app_main(void)
     xTaskCreate(button_task, "btn", 4096, NULL, 4, NULL);
     ESP_LOGI(TAG, "Hold boot button %d s after power-up for the web UI",
              (int)(WEB_BTN_HOLD_MS / 1000));
+
+    /* Bootloader rollback support: a freshly OTA'd image boots as
+     * "pending verify" and must be confirmed healthy, or the next reboot
+     * falls back to the previous slot. All core init above succeeded
+     * (config, gyro, PWM, servo, mixer, LEDs, BLE), so this image is
+     * good — confirm it now. Deliberately NOT delayed: a quick battery
+     * swap inside a grace window would otherwise trigger a spurious
+     * rollback (pending-verify state survives power loss in otadata). */
+    esp_ota_mark_app_valid_cancel_rollback();
 
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(1000));

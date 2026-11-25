@@ -1,0 +1,45 @@
+# Release pipeline: push a semver tag (v1.2.3) → build firmware in the
+# official ESP-IDF environment → attach the .bin (+ sha256 sidecar) to an
+# auto-generated GitHub Release. The BLE web page discovers releases via
+# the GitHub API — no manifest file to maintain.
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write   # required to create the Release
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history + tags for git describe)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build firmware (ESP-IDF 6.0.1, esp32c3)
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v6.0.1
+          target: esp32c3
+
+      - name: Collect artifacts
+        run: |
+          VERSION=$(git describe --tags --dirty --always)
+          echo "Building version: $VERSION"
+          cp build/gyroX.bin "gyroX-${VERSION}.bin"
+          sha256sum "gyroX-${VERSION}.bin" > "gyroX-${VERSION}.bin.sha256"
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: gyroX ${{ env.VERSION }}
+          generate_release_notes: true   # auto changelog from commits since last tag
+          files: |
+            gyroX-*.bin
+            gyroX-*.bin.sha256

@@ -132,10 +132,27 @@
       <div class="msg">Applied on Save — no reboot needed.</div>
 
       <div class="sep">Firmware update (OTA)</div>
-      <div class="row"><label>Firmware file (.bin)</label><input type="file" id="otaFile" accept=".bin"></div>
-      <div class="row"><button id="btnOta" class="btn-full" disabled>Upload & flash over BLE</button></div>
+      <div class="row"><label>Installed</label><span id="otaInstalled" class="value">—</span></div>
+      <div class="row">
+        <label>Version</label>
+        <select id="otaVersion"><option>Loading releases…</option></select>
+      </div>
+      <div id="otaMeta" class="msg"></div>
+      <div class="row"><button id="btnOta" class="btn-full" disabled>Update & flash over BLE</button></div>
       <div class="progress"><div class="fill" id="otaBar"></div></div>
       <div id="otaMsg" class="msg"></div>
+
+      <div class="sep">Rollback</div>
+      <div class="row"><label>Other slot</label><span id="otaOther" class="value">—</span></div>
+      <div class="row"><button id="btnRollback" class="btn-full" disabled>Roll back to previous firmware</button></div>
+
+      <div class="collapsible">
+        <div class="sep" data-collapse="localbin">Flash a local .bin <span class="chev">▸</span></div>
+        <div class="collapse-content" id="collapse-localbin">
+          <div class="row"><label>Fallback file</label><input type="file" id="otaFile" accept=".bin"></div>
+          <div class="msg">For offline installs — releases are normally pulled from GitHub automatically.</div>
+        </div>
+      </div>
     </section>
 
   </div>

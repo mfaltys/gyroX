@@ -318,6 +318,46 @@ static int chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
                 return 0;
             }
 
+            if (strcmp(cmd_s, "get_slots") == 0) {
+                cJSON_Delete(root);
+                const esp_partition_t *running = esp_ota_get_running_partition();
+                const esp_partition_t *other = esp_ota_get_next_update_partition(NULL);
+                esp_app_desc_t d;
+                char runv[64] = "unknown";
+                char othv[64] = "";
+                if (running && esp_ota_get_partition_description(running, &d) == ESP_OK) {
+                    strncpy(runv, d.version, sizeof(runv) - 1);
+                    runv[sizeof(runv) - 1] = '\0';
+                }
+                if (other && esp_ota_get_partition_description(other, &d) == ESP_OK) {
+                    strncpy(othv, d.version, sizeof(othv) - 1);
+                    othv[sizeof(othv) - 1] = '\0';
+                }
+                cJSON *r = cJSON_CreateObject();
+                cJSON_AddStringToObject(r, "running", runv);
+                if (othv[0]) cJSON_AddStringToObject(r, "other", othv);
+                else cJSON_AddNullToObject(r, "other");
+                char *json = cJSON_PrintUnformatted(r);
+                if (json) {
+                    notify_json(conn_handle, chr_cfg_handle, json);
+                    free(json);
+                }
+                cJSON_Delete(r);
+                return 0;
+            }
+
+            if (strcmp(cmd_s, "rollback") == 0) {
+                cJSON_Delete(root);
+                ESP_LOGW(TAG, "Rollback requested via BLE — rebooting into the previous image");
+                notify_json(conn_handle, chr_cfg_handle, "{\"ok\":true,\"rollback\":true}");
+                /* Let the (deferred) ack reach the client, then invalidate the
+                 * running image and reboot — the bootloader picks the other
+                 * slot, which still holds the previous firmware. */
+                vTaskDelay(pdMS_TO_TICKS(200));
+                esp_ota_mark_app_invalid_rollback_and_reboot();
+                return 0; /* unreachable */
+            }
+
             cJSON_Delete(root);
             const char *resp = "{\"error\":\"unknown_cmd\"}";
             notify_json(conn_handle, chr_cfg_handle, resp);
