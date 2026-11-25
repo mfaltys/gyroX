@@ -448,7 +448,7 @@ static struct ble_gatt_chr_def gyro_chars[] = {
         .uuid = &chr_cfg_uuid.u,
         .access_cb = chr_access_cb,
         .arg = (void *)2, /* CONFIG */
-        .flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_NOTIFY,
+        .flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP | BLE_GATT_CHR_F_NOTIFY,
     },
     {
         .uuid = &chr_otac_uuid.u,

@@ -53,16 +53,21 @@ function setStatus(text, cls) {
 /* -------- Command transport (JSON over CONFIG characteristic) ----- */
 /* Promise registered BEFORE the write so a fast response is never
  * missed. Responses arrive as notifications on 0xA102. */
-function sendCommand(cmd, timeoutMs) {
+function sendCommand(cmd, timeoutMs, noRsp) {
   if (!connected) return Promise.reject(new Error('Not connected'));
   const tmo = timeoutMs || 5000;
   return new Promise((resolve, reject) => {
+    notifyBuf = '';   // start clean — a lost fragment must not poison this response
     notifyResolve = (text) => {
       try { resolve(JSON.parse(text)); }
       catch (e) { reject(new Error('Bad JSON from device')); }
     };
-    chrCfg.writeValue(new TextEncoder().encode(JSON.stringify(cmd)))
-      .catch(e => { notifyResolve = null; reject(e); });
+    const payload = new TextEncoder().encode(JSON.stringify(cmd));
+    /* Polls use write-without-response: no ATT write response to wait on, so
+     * a wedge in the write-response path can't stall the telemetry loop. */
+    const p = noRsp ? chrCfg.writeValueWithoutResponse(payload)
+                    : chrCfg.writeValue(payload);
+    p.catch(e => { notifyResolve = null; reject(e); });
     setTimeout(() => {
       if (notifyResolve) { notifyResolve = null; reject(new Error('Device did not respond (timeout)')); }
     }, tmo);
@@ -71,11 +76,17 @@ function sendCommand(cmd, timeoutMs) {
 
 function onChrCfgValue(value) {
   notifyBuf += new TextDecoder().decode(value.buffer);
+  /* Responses always start with '{'. If not, a fragment was lost — drop the
+   * buffer so the next command's response starts clean instead of every
+   * future parse failing on concatenated garbage. */
+  if (notifyBuf.charCodeAt(0) !== 0x7b) { notifyBuf = ''; return; }
   try {
     const obj = JSON.parse(notifyBuf);
     notifyBuf = '';
     if (notifyResolve) { const r = notifyResolve; notifyResolve = null; r(JSON.stringify(obj)); }
-  } catch (e) { /* incomplete — wait for more fragments */ }
+  } catch (e) {
+    if (notifyBuf.length > 600) notifyBuf = '';  // runaway-buffer guard
+  }
 }
 
 /* ---------------------- Connect / disconnect ---------------------- */
@@ -406,7 +417,7 @@ async function otaUpload() {
 
 /* ---------------------- Telemetry polling ------------------------- */
 async function pollOnce() {
-  const s = await sendCommand({ cmd: 'get_state' }, 1500);
+  const s = await sendCommand({ cmd: 'get_state' }, 1500, true);
   el('rx').textContent = s.rx;
   el('rate').textContent = s.rate_z;
   el('heading').textContent = Number(s.heading).toFixed(1);
@@ -428,6 +439,7 @@ async function pollingLoop(gen) {
         stallCount = 0;
       } catch (e) {
         stallCount++;
+        if (stallCount === 1) log('Poll missed (' + e.message + ') — watching…', 'err');
         if (stallCount >= 5) {
           /* Link is wedged (e.g. silent drop) — GATT ops queue forever and
            * telemetry freezes. Drop and reconnect automatically. */
