@@ -136,6 +136,7 @@ function disconnect() {
   device = null; server = null;
   setConnectedUI(false);
   log('Disconnected');
+}
 
 /* ------------------ Config load / save / actions ------------------ */
 function applyCfg(c) {
@@ -181,6 +182,7 @@ function collectCfg() {
     leds_bright: Number(el('mLedsBright').value),
   };
 }
+
 
 async function saveCfg() {
   try {
@@ -241,7 +243,6 @@ async function resetHead() {
   });
 });
 
-}
 
 /* profile presets (same as AP page) */
 const PRESETS = {
@@ -321,6 +322,7 @@ async function otaUpload() {
   el('otaBar').style.width = '0%';
   el('otaMsg').textContent = 'Starting… keep this tab open!';
 
+  const ctrl = (o) => chrOtac.writeValue(new TextEncoder().encode(JSON.stringify(o)));
   try {
     const ab = await new Promise((res, rej) => {
       const r = new FileReader();
@@ -331,8 +333,6 @@ async function otaUpload() {
     const bytes = new Uint8Array(ab);
     log('OTA begin: ' + bytes.length + ' bytes');
 
-    /* OTA control lives on OTA_CTRL (0xA103), not the JSON CONFIG channel */
-    const ctrl = (o) => chrOtac.writeValue(new TextEncoder().encode(JSON.stringify(o)));
     await ctrl({ cmd: 'begin', size: bytes.length });
     log('OTA accepted by device', 'ok');
 
@@ -353,7 +353,7 @@ async function otaUpload() {
   } catch (e) {
     el('otaMsg').textContent = 'OTA failed: ' + e.message;
     log('OTA failed: ' + e.message, 'err');
-    try { await chrOtac.writeValue(new TextEncoder().encode(JSON.stringify({ cmd: 'abort' }))); } catch (_) {}
+    try { await ctrl({ cmd: 'abort' }); } catch (_) {}
   } finally {
     otaBusy = false;
     el('btnOta').disabled = !connected;
