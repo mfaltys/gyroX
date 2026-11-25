@@ -11,6 +11,11 @@
   <header class="bar">
     <div class="brand">gyro<span class="dot">X</span></div>
     <div id="ver" class="pill">fw: --</div>
+    <label class="gyro-switch" title="Gyro correction on/off">
+      <span class="gs-label">GYRO</span>
+      <input type="checkbox" id="swGyro" checked>
+      <span class="gs-track"></span>
+    </label>
   </header>
 
   <div id="status" class="msg">Polling telemetry…</div>
@@ -236,7 +241,9 @@ function loadState(){
     el('rate').textContent = s.rate_z;
     el('heading').textContent = s.heading.toFixed(1);
     el('output').textContent = s.output;
-    el('status').textContent = (s.rx_valid ? 'RX OK' : 'NO RX!') + '  ·  gyro ' + (s.gyro_ready ? 'OK' : '---');
+    if (Date.now() - swGyroTouched > 1000) el('swGyro').checked = !!s.gyro_on;
+    el('status').textContent = (s.rx_valid ? 'RX OK' : 'NO RX!') + '  ·  gyro ' + (s.gyro_ready ? 'OK' : '---') +
+                               (s.gyro_on ? '' : '  ·  OFF');
   }).catch(() => {});
 }
 get('/api/version').then(r => { if (r.version) el('ver').textContent = 'fw: ' + r.version; });
@@ -354,6 +361,18 @@ async function saveAdvField(key, sel) {
 }
 el('mDlpf').onchange = (e) => saveAdvField('gyro_dlpf', e.target);
 el('mFs').onchange = (e) => saveAdvField('gyro_fs', e.target);
+/* Header gyro switch: runtime-only (never persisted - the gyro always arms
+ * at boot). The device plays the wheel tweak on off -> on. */
+let swGyroTouched = 0;   /* pause state-poll sync briefly after a manual flip */
+el('swGyro').onchange = async () => {
+  swGyroTouched = Date.now();
+  try {
+    const r = await post('/api/gyro', { on: el('swGyro').checked ? 1 : 0 });
+    if (!r.ok) throw new Error((await r.text()) || 'failed');
+  } catch (e) {
+    el('mMsg').textContent = 'Gyro switch failed: ' + e.message;
+  }
+};
 setInterval(loadState, 200);
 loadCfg();
 loadState();

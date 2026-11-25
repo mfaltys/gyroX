@@ -303,6 +303,37 @@ static esp_err_t captive_handler(httpd_req_t *req)
     return httpd_resp_send(req, NULL, 0);
 }
 
+/* ---------- /api/gyro: runtime gyro on/off ----------
+ * Deliberately NOT persisted: the gyro always arms at boot; this only flips
+ * the live mixer state (same path as the boot-button tap, tweak included). */
+static esp_err_t gyro_post_handler(httpd_req_t *req)
+{
+    if (req->content_len <= 0 || req->content_len > 128) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid payload length");
+        return ESP_FAIL;
+    }
+    char body[129];
+    int received = httpd_req_recv(req, body, req->content_len);
+    if (received <= 0) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Failed to read payload");
+        return ESP_FAIL;
+    }
+    body[received] = '\0';
+
+    cJSON *root = cJSON_Parse(body);
+    if (!root || !cJSON_IsObject(root)) {
+        if (root) cJSON_Delete(root);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+        return ESP_FAIL;
+    }
+    cJSON *on_i = cJSON_GetObjectItem(root, "on");
+    bool on = cJSON_IsNumber(on_i) ? (on_i->valueint != 0) : cJSON_IsTrue(on_i);
+    cJSON_Delete(root);
+
+    mixing_set_gyro(on);
+    return json_ok(req);
+}
+
 /* ---------- /api/state ---------- */
 static esp_err_t state_get_handler(httpd_req_t *req)
 {
@@ -510,6 +541,7 @@ static const uri_map_t s_uris[] = {
     { "/api/state",           HTTP_GET,    state_get_handler },
     { "/api/config",          HTTP_GET,    config_get_handler },
     { "/api/config",          HTTP_POST,   config_post_handler },
+    { "/api/gyro",            HTTP_POST,   gyro_post_handler },
     { "/api/calibrate",       HTTP_POST,   calibrate_post_handler },
     { "/api/reset_heading",   HTTP_POST,   reset_heading_post_handler },
     { "/api/version",         HTTP_GET,    version_get_handler },

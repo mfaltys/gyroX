@@ -311,6 +311,16 @@ static int chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
                 return 0;
             }
 
+            if (strcmp(cmd_s, "set_gyro") == 0) {
+                cJSON *on_i = cJSON_GetObjectItem(root, "on");
+                bool on = cJSON_IsNumber(on_i) ? (on_i->valueint != 0) : cJSON_IsTrue(on_i);
+                cJSON_Delete(root);
+                mixing_set_gyro(on);   /* off -> on plays the confirmation tweak */
+                notify_json(conn_handle, chr_cfg_handle,
+                            on ? "{\"ok\":true,\"gyro_on\":1}" : "{\"ok\":true,\"gyro_on\":0}");
+                return 0;
+            }
+
             if (strcmp(cmd_s, "get_state") == 0) {
                 cJSON_Delete(root);
                 const mixing_state_t *m = mixing_get_state();

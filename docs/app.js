@@ -122,6 +122,8 @@ function setConnectedUI(on) {
   el('btnLoad').disabled = !on;
   el('btnRollback').disabled = !on;
   el('btnSaveName').disabled = !on;
+  el('swGyro').checked = true;   /* device always arms at boot */
+  el('swGyro').disabled = !on;
   updateOtaStatus();
 }
 
@@ -733,6 +735,20 @@ async function otaUpload() {
   }
 }
 
+/* Header gyro switch: runtime-only, never persisted (the gyro always arms
+ * at boot). The device plays the wheel tweak on off -> on. */
+async function toggleGyro(on) {
+  if (!connected) { el('swGyro').checked = true; return; }
+  try {
+    const r = await sendCommand({ cmd: 'set_gyro', on: on ? 1 : 0 });
+    if (!r.ok) throw new Error(r.error || 'failed');
+    log(on ? 'Gyro ARMED - wheels tweaked' : 'Gyro OFF - raw steering', 'ok');
+  } catch (e) {
+    log('Gyro switch failed: ' + e.message, 'err');
+    try { await refreshState(); } catch (e2) { el('swGyro').checked = true; }
+  }
+}
+
 /* ------------------ Telemetry (one-shot snapshot) ------------------ */
 /* No continuous polling: the GATT channel goes quiet between user actions,
  * which keeps Android Chrome's flaky GATT plumbing out of the picture. The
@@ -740,7 +756,9 @@ async function otaUpload() {
  * lives on the AP-mode web UI over HTTP. */
 async function refreshState() {
   const s = await sendCommand({ cmd: 'get_state' }, 2000);
-  setStatus((s.rx_valid ? 'RX OK' : 'NO RX!') + '  ·  gyro ' + (s.gyro_ready ? 'OK' : '---'),
+  el('swGyro').checked = !!s.gyro_on;
+  setStatus((s.rx_valid ? 'RX OK' : 'NO RX!') + '  ·  gyro ' + (s.gyro_ready ? 'OK' : '---') +
+            (s.gyro_on ? '' : '  ·  OFF'),
             s.rx_valid ? '' : 'err');
 }
 
@@ -759,6 +777,7 @@ el('otaVersion').addEventListener('change', updateOtaStatus);
 el('btnRollback').addEventListener('click', rollbackNow);
 el('mDlpf').addEventListener('change', (e) => saveAdvField('gyro_dlpf', e.target, 'Gyro filter'));
 el('mFs').addEventListener('change', (e) => saveAdvField('gyro_fs', e.target, 'Gyro range'));
+el('swGyro').addEventListener('change', (e) => toggleGyro(e.target.checked));
 
 /* ---------------------------- Init -------------------------------- */
 setConnectedUI(false);
