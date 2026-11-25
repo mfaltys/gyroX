@@ -119,24 +119,24 @@
     await chrCfg.writeValue(enc);
   }
 
-  function readCfg() {
-    return new Promise((resolve, reject) => {
-      notifyResolve = resolve;
-      chrCfg.startNotifications().then(() => {
-        setTimeout(() => {
-          if (notifyResolve) {
-            notifyResolve = null;
-            reject(new Error('Config read timed out'));
-          }
-        }, 5000);
-      }).catch(reject);
-    });
-  }
-
+  /* Send a JSON command on the CONFIG characteristic and wait for the
+   * device's notification response. The promise is registered BEFORE the
+   * write so we can't miss a fast response. */
   async function sendCommand(cmd) {
-    await writeCfg(cmd);
-    const result = await readCfg();
-    return JSON.parse(result);
+    return new Promise((resolve, reject) => {
+      notifyResolve = (result) => {
+        try { resolve(JSON.parse(result)); }
+        catch (e) { reject(new Error('Bad JSON from device')); }
+      };
+      chrCfg.writeValue(new TextEncoder().encode(JSON.stringify(cmd)))
+        .catch((e) => { notifyResolve = null; reject(e); });
+      setTimeout(() => {
+        if (notifyResolve) {
+          notifyResolve = null;
+          reject(new Error('Device did not respond (timeout)'));
+        }
+      }, 5000);
+    });
   }
 
   async function readInfo() {
@@ -193,8 +193,10 @@
       chrOtac = await svc.getCharacteristic(CHR_OTAC);
       chrOtad = await svc.getCharacteristic(CHR_OTAD);
 
+      /* Start notifications BEFORE any commands so responses are never missed */
       chrCfg.addEventListener('characteristicvaluechanged',
         (ev) => onChrCfgValue(ev.target.value));
+      await chrCfg.startNotifications();
 
       log('Connected! Reading device info...');
       setConnected(true);
