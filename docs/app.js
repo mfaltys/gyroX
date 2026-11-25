@@ -15,11 +15,11 @@ const CHR_OTAC = '0000a103-0000-1000-8000-00805f9b34fb';
 const CHR_OTAD = '0000a104-0000-1000-8000-00805f9b34fb';
 
 const MTU_CHUNK   = 480;  // OTA data bytes per WRITE (device MTU is 517)
-/* Write-with-response baseline measured on a real device: 1,248,368 bytes
- * in ~409 s (~3 KB/s) - Chrome's per-write GATT latency dominates.
- * With windowed write-without-response streaming the rate is set by the
- * device's flash pipeline (~4 KB sector erases), expected ~65-75 s. */
-const OTA_BYTES_PER_SEC = 18000;
+/* Measured over BLE (write-with-response): 1,248,368 bytes in ~409 s.
+ * Windowed write-without-response measured: 1,228,480 bytes in ~296 s
+ * (~4.15 KB/s) - the rate is set by the device's flash pipeline
+ * (~4 KB sector erases), which the flow-control window tracks exactly. */
+const OTA_BYTES_PER_SEC = 4150;
 /* Flow control: the device acks every ~4 KB actually written to flash.
  * Never more than OTA_WINDOW_BYTES of unacked data in flight, else the
  * backlog grows behind the device and Chrome's ~30 s GATT op timeout
