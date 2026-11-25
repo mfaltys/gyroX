@@ -230,7 +230,7 @@ function applyCfg(c) {
   el('mSmin').value = c.servo_min_us;
   el('mScenter').value = c.servo_center_us;
   el('mSmax').value = c.servo_max_us;
-  el('mGzoff').value = c.gyro_z_offset;
+  el('mGzoff').textContent = Number(c.gyro_z_offset || 0).toFixed(3);
   el('mDlpf').value = c.gyro_dlpf;
   el('mFs').value = c.gyro_fs;
   el('mProfile').value = (c.profile === undefined ? 0 : c.profile);
@@ -254,7 +254,6 @@ function collectCfg() {
     servo_min_us: Number(el('mSmin').value),
     servo_center_us: Number(el('mScenter').value),
     servo_max_us: Number(el('mSmax').value),
-    gyro_z_offset: Number(el('mGzoff').value),
     gyro_dlpf: Number(el('mDlpf').value),
     gyro_fs: Number(el('mFs').value),
     profile: Number(el('mProfile').value),
@@ -704,8 +703,8 @@ async function otaUpload() {
  * lives on the AP-mode web UI over HTTP. */
 async function refreshState() {
   const s = await sendCommand({ cmd: 'get_state' }, 2000);
-  setStatus((s.rx_valid ? 'RX OK' : 'NO RX!') + '  ·  gyro ' + (s.gyro_ready ? 'OK' : '---') +
-            '  ·  snapshot', s.rx_valid ? '' : 'err');
+  setStatus((s.rx_valid ? 'RX OK' : 'NO RX!') + '  ·  gyro ' + (s.gyro_ready ? 'OK' : '---'),
+            s.rx_valid ? '' : 'err');
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }

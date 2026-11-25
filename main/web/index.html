@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>gyroX</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="shell">
+  <header class="bar">
+    <div class="brand">gyro<span class="dot">X</span></div>
+    <div id="ver" class="pill">fw: --</div>
+  </header>
+
+  <div id="status" class="msg">Polling telemetry…</div>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-tab="drive" role="tab" aria-selected="true">Drive</button>
+    <button class="tab" data-tab="leds" role="tab" aria-selected="false">LEDs</button>
+    <button class="tab" data-tab="advanced" role="tab" aria-selected="false">Advanced</button>
+  </nav>
+
+  <div class="tabpanels">
+
+    <section class="tabpanel active" id="tab-drive" role="tabpanel">
+      <div class="row profile-row">
+        <label class="profile-label">Profile</label>
+        <select id="mProfile" class="profile-select">
+          <option value="0">General</option>
+          <option value="1">Drift</option>
+          <option value="2">Bashing</option>
+          <option value="3">Custom</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>Mode</label>
+        <select id="mMode">
+          <option value="0">Rate</option>
+          <option value="1">Heading hold</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>Gain</label>
+        <input type="range" id="mGain" min="0" max="200">
+        <span id="vGain" class="vnum">8.0</span><span class="vunit">%</span>
+      </div>
+      <div class="row">
+        <label>Gyro reversed</label>
+        <label class="switch"><input type="checkbox" id="mGyroRev"><span class="sl"></span></label>
+      </div>
+      <div class="row" id="rowResetHead" style="display:none"><button id="btnResetHead" class="btn-full">Reset heading-hold target</button></div>
+
+      <div class="collapsible">
+        <div class="sep" data-collapse="steering">Steering <span class="chev">▸</span></div>
+        <div class="collapse-content" id="collapse-steering">
+          <div class="row">
+            <label>Steering reversed</label>
+            <label class="switch"><input type="checkbox" id="mSteerRev"><span class="sl"></span></label>
+          </div>
+          <div class="row">
+            <label>Deadband</label>
+            <input type="range" id="mDeadband" min="0" max="50">
+            <span id="vDeadband" class="vnum">8</span><span class="vunit">%</span>
+          </div>
+          <div class="row">
+            <label>Trim</label>
+            <input type="range" id="mTrim" min="-100" max="100">
+            <span id="vTrim" class="vnum">0</span><span class="vunit">%</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="collapsible">
+        <div class="sep" data-collapse="servo">Servo (µs) <span class="chev">▸</span></div>
+        <div class="collapse-content" id="collapse-servo">
+          <div class="row"><label>Min</label><input type="number" id="mSmin" min="100" max="4000"></div>
+          <div class="row"><label>Center</label><input type="number" id="mScenter" min="100" max="4000"></div>
+          <div class="row"><label>Max</label><input type="number" id="mSmax" min="100" max="4000"></div>
+        </div>
+      </div>
+
+      <div class="row act">
+        <button id="btnCal" class="btn-full">Calibrate gyro (car still!)</button>
+        <button id="btnSave" class="btn-full btn-save">Save to device</button>
+        <button id="btnLoad" class="btn-full">Reload</button>
+      </div>
+      <div id="mMsg" class="msg"></div>
+    </section>
+
+    <section class="tabpanel" id="tab-leds" role="tabpanel">
+      <div class="row">
+        <label>Power</label>
+        <label class="switch"><input type="checkbox" id="mLedsOn"><span class="sl"></span></label>
+      </div>
+      <div class="row">
+        <label>Color</label>
+        <span class="colorrow"><input type="color" id="mLedsColor" value="#ff0000"><span id="vLedsColor" class="hex">#ff0000</span></span>
+      </div>
+      <div class="row">
+        <label>Brightness</label>
+        <input type="range" id="mLedsBright" min="0" max="100">
+        <span id="vBright" class="vnum">100</span><span class="vunit">%</span>
+      </div>
+    </section>
+
+    <section class="tabpanel" id="tab-advanced" role="tabpanel">
+      <div class="row">
+        <label>Gyro filter (DLPF)</label>
+        <select id="mDlpf">
+          <option value="5">5 Hz (smooth)</option>
+          <option value="10">10 Hz</option>
+          <option value="21">21 Hz (drift)</option>
+          <option value="44">44 Hz (snappy)</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>Gyro range</label>
+        <select id="mFs">
+          <option value="250">±250 °/s</option>
+          <option value="500">±500 °/s</option>
+          <option value="1000">±1000 °/s</option>
+          <option value="2000">±2000 °/s</option>
+        </select>
+      </div>
+      <div class="row plain">
+        <label>Gyro zero offset (°/s)</label>
+        <span id="mGzoff" class="value">-</span>
+      </div>
+      <div class="msg">Applied on Save - no reboot needed.</div>
+
+      <div class="sep">Firmware update (OTA)</div>
+      <div class="row"><label>Firmware file (.bin)</label><input type="file" id="otaFile" accept=".bin"></div>
+      <div class="row"><button id="btnOta" class="btn-full">Upload & flash</button></div>
+      <div class="progress"><div class="fill" id="otaBar"></div></div>
+      <div id="otaMsg" class="msg"></div>
+    </section>
+
+  </div>
+
+  <div class="telemetry">
+    <div class="tel-item"><div class="tel-label">RX</div><div class="tel-val" id="rx">0</div><div class="tel-unit">%</div></div>
+    <div class="tel-item"><div class="tel-label">Rate</div><div class="tel-val" id="rate">0</div><div class="tel-unit">°/s</div></div>
+    <div class="tel-item"><div class="tel-label">Heading</div><div class="tel-val" id="heading">0</div><div class="tel-unit">°</div></div>
+    <div class="tel-item"><div class="tel-label">Output</div><div class="tel-val" id="output">0</div><div class="tel-unit">%</div></div>
+  </div>
+</div>
+<script>
+function el(id){ return document.getElementById(id); }
+function post(path, body){
+  return fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+}
+function get(path){ return fetch(path).then(r => r.json()); }
+function applyCfg(c){
+  el('mMode').value = c.gyro_mode;
+  el('mGain').value = c.gyro_gain; el('vGain').textContent = (c.gyro_gain / 10).toFixed(1);
+  el('mGyroRev').checked = c.gyro_reverse === 1;
+  el('mSteerRev').checked = c.steer_reverse === 1;
+  el('mDeadband').value = c.steer_deadband; el('vDeadband').textContent = c.steer_deadband;
+  el('mTrim').value = c.steer_trim; el('vTrim').textContent = c.steer_trim;
+  el('mSmin').value = c.servo_min_us;
+  el('mScenter').value = c.servo_center_us;
+  el('mSmax').value = c.servo_max_us;
+  el('mGzoff').textContent = Number(c.gyro_z_offset || 0).toFixed(3);
+  el('mDlpf').value = c.gyro_dlpf;
+  el('mFs').value = c.gyro_fs;
+  el('mProfile').value = (c.profile === undefined ? 0 : c.profile);
+  el('rowResetHead').style.display = (c.gyro_mode === 1) ? '' : 'none';
+  el('mLedsOn').checked = c.leds_on === 1;
+  const hexc = '#' + Number(c.leds_color || 0).toString(16).padStart(6, '0');
+  el('mLedsColor').value = hexc;
+  el('vLedsColor').textContent = hexc;
+  el('mLedsBright').value = (c.leds_bright === undefined ? 100 : c.leds_bright);
+  el('vBright').textContent = el('mLedsBright').value;
+}
+function saveCfg(){
+  const body = {
+    gyro_mode: Number(el('mMode').value),
+    gyro_gain: Number(el('mGain').value),
+    gyro_reverse: el('mGyroRev').checked ? 1 : 0,
+    steer_reverse: el('mSteerRev').checked ? 1 : 0,
+    steer_deadband: Number(el('mDeadband').value),
+    steer_trim: Number(el('mTrim').value),
+    servo_min_us: Number(el('mSmin').value),
+    servo_center_us: Number(el('mScenter').value),
+    servo_max_us: Number(el('mSmax').value),
+    gyro_dlpf: Number(el('mDlpf').value),
+    gyro_fs: Number(el('mFs').value),
+    profile: Number(el('mProfile').value),
+    leds_on: el('mLedsOn').checked ? 1 : 0,
+    leds_color: parseInt(el('mLedsColor').value.slice(1), 16),
+    leds_bright: Number(el('mLedsBright').value),
+  };
+  el('mMsg').textContent = 'Saving…';
+  post('/api/config', body).then(async r => {
+    if (!r.ok) throw new Error((await r.text()) || 'save failed');
+    el('mMsg').textContent = 'Saved to NVS';
+    setTimeout(() => { el('mMsg').textContent = ''; }, 1500);
+  }).catch(e => { el('mMsg').textContent = 'Save failed: ' + e.message; });
+}
+function calibrate(){
+  if (!confirm('Keep the car completely still, then press OK.')) return;
+  el('mMsg').textContent = 'Calibrating gyro…';
+  post('/api/calibrate').then(async r => {
+    if (!r.ok) throw new Error('calibration failed');
+    el('mMsg').textContent = 'Calibrated';
+    loadCfg();
+    setTimeout(() => { el('mMsg').textContent = ''; }, 1500);
+  }).catch(e => { el('mMsg').textContent = 'Calibration failed: ' + e.message; });
+}
+function resetHead(){
+  post('/api/reset_heading').then(() => {
+    el('mMsg').textContent = 'Heading-hold target reset';
+    setTimeout(() => { el('mMsg').textContent = ''; }, 1000);
+  });
+}
+function loadCfg(){ get('/api/config').then(applyCfg).catch(() => {}); }
+function loadState(){
+  get('/api/state').then(s => {
+    el('rx').textContent = s.rx;
+    el('rate').textContent = s.rate_z;
+    el('heading').textContent = s.heading.toFixed(1);
+    el('output').textContent = s.output;
+    el('status').textContent = (s.rx_valid ? 'RX OK' : 'NO RX!') + '  ·  gyro ' + (s.gyro_ready ? 'OK' : '---');
+  }).catch(() => {});
+}
+get('/api/version').then(r => { if (r.version) el('ver').textContent = 'fw: ' + r.version; });
+['mGain', 'mDeadband', 'mTrim'].forEach(id => {
+  el(id).addEventListener('input', () => {
+    const d = id === 'mGain' ? 'vGain' : id === 'mDeadband' ? 'vDeadband' : 'vTrim';
+    let v = el(id).value;
+    if (id === 'mGain') v = (Number(v) / 10).toFixed(1);
+    el(d).textContent = v;
+  });
+});
+const PRESETS = {
+  0: { name: 'General', gyro_mode: 0, gyro_gain: 100, steer_deadband: 8, steer_trim: 0, servo_min_us: 500, servo_center_us: 1500, servo_max_us: 2500 },
+  1: { name: 'Drift',   gyro_mode: 0, gyro_gain: 200, steer_deadband: 4, steer_trim: 0, servo_min_us: 600, servo_center_us: 1500, servo_max_us: 2400 },
+  2: { name: 'Bashing', gyro_mode: 0, gyro_gain: 120, steer_deadband: 7, steer_trim: 0, servo_min_us: 500, servo_center_us: 1500, servo_max_us: 2500 },
+};
+el('mProfile').addEventListener('change', () => {
+  el('profilePill').textContent = el('mProfile').selectedOptions[0].textContent;
+  const p = Number(el('mProfile').value);
+  if (p === 3) return;
+  const pre = PRESETS[p];
+  if (!pre) return;
+  el('mMode').value = pre.gyro_mode;
+  el('rowResetHead').style.display = pre.gyro_mode === 1 ? '' : 'none';
+  el('mGain').value = pre.gyro_gain;
+  el('vGain').textContent = (pre.gyro_gain / 10).toFixed(1);
+  el('mDeadband').value = pre.steer_deadband;
+  el('vDeadband').textContent = pre.steer_deadband;
+  el('mTrim').value = pre.steer_trim;
+  el('vTrim').textContent = pre.steer_trim;
+  el('mSmin').value = pre.servo_min_us;
+  el('mScenter').value = pre.servo_center_us;
+  el('mSmax').value = pre.servo_max_us;
+  el('mMsg').textContent = pre.name + ' preset loaded - press Save to apply';
+});
+const flipToCustom = () => { el('mProfile').value = 3; };
+['mGain', 'mDeadband', 'mTrim', 'mSmin', 'mScenter', 'mSmax'].forEach(id => {
+  el(id).addEventListener('input', flipToCustom);
+});
+el('mMode').addEventListener('change', () => {
+  el('rowResetHead').style.display = el('mMode').value === '1' ? '' : 'none';
+  flipToCustom();
+});
+
+/* collapsible sections (Steering / Servo) - start collapsed */
+document.querySelectorAll('.sep[data-collapse]').forEach(sep => {
+  sep.addEventListener('click', () => {
+    const open = sep.classList.toggle('open');
+    el('collapse-' + sep.dataset.collapse).classList.toggle('open', open);
+    sep.querySelector('.chev').textContent = open ? '▾' : '▸';
+  });
+});
+
+const tabs = document.querySelectorAll('.tab');
+const panels = document.querySelectorAll('.tabpanel');
+tabs.forEach(t => {
+  t.addEventListener('click', () => {
+    tabs.forEach(x => { x.classList.remove('active'); x.setAttribute('aria-selected', 'false'); });
+    panels.forEach(p => p.classList.remove('active'));
+    t.classList.add('active');
+    t.setAttribute('aria-selected', 'true');
+    el('tab-' + t.dataset.tab).classList.add('active');
+  });
+});
+el('mLedsOn').addEventListener('change', saveCfg);
+el('mLedsColor').addEventListener('input', () => { el('vLedsColor').textContent = el('mLedsColor').value; });
+el('mLedsColor').addEventListener('change', saveCfg);
+el('mLedsBright').addEventListener('input', () => { el('vBright').textContent = el('mLedsBright').value; });
+el('mLedsBright').addEventListener('change', saveCfg);
+el('btnOta').onclick = () => {
+  const f = el('otaFile').files[0];
+  if (!f) { el('otaMsg').textContent = 'Choose a .bin file first'; return; }
+  el('btnOta').disabled = true;
+  el('otaBar').style.width = '0%';
+  el('otaMsg').textContent = 'Uploading 0% - do not power off!';
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', '/api/ota');
+  xhr.upload.onprogress = (e) => {
+    if (e.lengthComputable) {
+      const p = Math.round((e.loaded / e.total) * 100);
+      el('otaBar').style.width = p + '%';
+      el('otaMsg').textContent = 'Uploading ' + p + '% - do not power off!';
+    }
+  };
+  xhr.onload = () => {
+    if (xhr.status === 200) {
+      el('otaBar').style.width = '100%';
+      el('otaMsg').textContent = 'Update written - rebooting into drive mode (hold boot 3 s to return here)';
+    } else {
+      el('btnOta').disabled = false;
+      el('otaMsg').textContent = 'OTA failed: ' + (xhr.responseText || xhr.status);
+    }
+  };
+  xhr.onerror = () => {
+    el('otaMsg').textContent = 'Connection lost - device is rebooting (hold boot 3 s to return here)';
+  };
+  xhr.send(f);
+};
+el('btnSave').onclick = saveCfg;
+el('btnLoad').onclick = loadCfg;
+el('btnCal').onclick = calibrate;
+el('btnResetHead').onclick = resetHead;
+setInterval(loadState, 200);
+loadCfg();
+loadState();
+</script>
+</body>
+</html>
