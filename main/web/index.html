@@ -105,6 +105,16 @@
     </section>
 
     <section class="tabpanel" id="tab-advanced" role="tabpanel">
+      <div class="sep">Device name</div>
+      <div class="row">
+        <label>Device name</label>
+        <input type="text" id="mDevName" maxlength="20" placeholder="unnamed">
+      </div>
+      <div class="row plain">
+        <label>This AP</label>
+        <span id="mApName" class="value">-</span>
+      </div>
+      <div class="msg">The AP and Bluetooth names apply after reboot.</div>
       <div class="row">
         <label>Gyro filter (DLPF)</label>
         <select id="mDlpf">
@@ -172,6 +182,8 @@ function applyCfg(c){
   el('vLedsColor').textContent = hexc;
   el('mLedsBright').value = (c.leds_bright === undefined ? 100 : c.leds_bright);
   el('vBright').textContent = el('mLedsBright').value;
+  el('mDevName').value = c.device_name || '';
+  el('mApName').textContent = c.device_name ? 'gyroX-' + c.device_name : 'gyroX';
 }
 function saveCfg(){
   const body = {
@@ -190,6 +202,7 @@ function saveCfg(){
     leds_on: el('mLedsOn').checked ? 1 : 0,
     leds_color: parseInt(el('mLedsColor').value.slice(1), 16),
     leds_bright: Number(el('mLedsBright').value),
+    device_name: el('mDevName').value,
   };
   el('mMsg').textContent = 'Saving…';
   post('/api/config', body).then(async r => {
@@ -239,7 +252,6 @@ const PRESETS = {
   2: { name: 'Bashing', gyro_mode: 0, gyro_gain: 120, steer_deadband: 7, steer_trim: 0, servo_min_us: 500, servo_center_us: 1500, servo_max_us: 2500 },
 };
 el('mProfile').addEventListener('change', () => {
-  el('profilePill').textContent = el('mProfile').selectedOptions[0].textContent;
   const p = Number(el('mProfile').value);
   if (p === 3) return;
   const pre = PRESETS[p];

@@ -170,9 +170,10 @@ static int chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
         if (chr_id == 1) { /* DEVICE_INFO */
             const esp_app_desc_t *desc = esp_app_get_description();
             char buf[256];
+            const char *dname = s_cfg.device_name[0] ? s_cfg.device_name : WEB_AP_SSID;
             int n = snprintf(buf, sizeof(buf),
-                             "{\"version\":\"%s\",\"model\":\"gyroX\",\"ble_ver\":2}",
-                             desc ? desc->version : "unknown");
+                             "{\"version\":\"%s\",\"model\":\"gyroX\",\"name\":\"%s\",\"ble_ver\":2}",
+                             desc ? desc->version : "unknown", dname);
             if (n < 0 || n >= (int)sizeof(buf)) n = sizeof(buf) - 1;
             rc = os_mbuf_append(ctxt->om, buf, n);
             return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
@@ -196,7 +197,7 @@ static int chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
             cJSON_AddNumberToObject(r, "leds_on", s_cfg.leds_on);
             cJSON_AddNumberToObject(r, "leds_color", (double)s_cfg.leds_color);
             cJSON_AddNumberToObject(r, "leds_bright", s_cfg.leds_bright);
-            cJSON_AddStringToObject(r, "web_ap_ssid", s_cfg.web_ap_ssid);
+            cJSON_AddStringToObject(r, "device_name", s_cfg.device_name);
             char *json = cJSON_PrintUnformatted(r);
             cJSON_Delete(r);
             if (!json) return BLE_ATT_ERR_INSUFFICIENT_RES;
@@ -250,7 +251,7 @@ static int chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
                 cJSON_AddNumberToObject(r, "leds_on", s_cfg.leds_on);
                 cJSON_AddNumberToObject(r, "leds_color", (double)s_cfg.leds_color);
                 cJSON_AddNumberToObject(r, "leds_bright", s_cfg.leds_bright);
-                cJSON_AddStringToObject(r, "web_ap_ssid", s_cfg.web_ap_ssid);
+                cJSON_AddStringToObject(r, "device_name", s_cfg.device_name);
                 char *json = cJSON_PrintUnformatted(r);
                 cJSON_Delete(r);
                 if (json) {
@@ -279,9 +280,10 @@ static int chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
                 cJSON_Delete(root);
                 const esp_app_desc_t *desc = esp_app_get_description();
                 char json[256];
+                const char *dname = s_cfg.device_name[0] ? s_cfg.device_name : WEB_AP_SSID;
                 int n = snprintf(json, sizeof(json),
-                                 "{\"ok\":true,\"version\":\"%s\",\"model\":\"gyroX\",\"ble_ver\":2}",
-                                 desc ? desc->version : "unknown");
+                                 "{\"ok\":true,\"version\":\"%s\",\"model\":\"gyroX\",\"name\":\"%s\",\"ble_ver\":2}",
+                                 desc ? desc->version : "unknown", dname);
                 if (n < 0 || n >= (int)sizeof(json)) n = sizeof(json) - 1;
                 notify_json(conn_handle, chr_cfg_handle, json);
                 return 0;
@@ -623,20 +625,28 @@ static void ble_advertise(void)
 {
     struct ble_gap_adv_params adv_params = {0};
     struct ble_hs_adv_fields adv_fields = {0};
-    const char *name = "gyroX";
+    struct ble_hs_adv_fields rsp_fields = {0};
+    /* BLE name = bare device name (gyroX is implied); AP SSID = gyroX-<dev> */
+    const char *name = s_cfg.device_name[0] ? s_cfg.device_name : WEB_AP_SSID;
+    size_t name_len = strlen(name);
+    if (name_len > BLE_HS_ADV_MAX_FIELD_SZ) name_len = BLE_HS_ADV_MAX_FIELD_SZ;
 
-    /* Device name + flags in the advertising payload */
+    /* Main packet: flags + 128-bit service UUID (Web Bluetooth filters on
+     * this). The device name goes in the SCAN RESPONSE instead - with the
+     * UUID in a 31-byte legacy payload, only ~8 name characters would fit.
+     * Android merges adv + scan-response, so the picker shows the name and
+     * the UUID filter still matches. */
     adv_fields.flags = BLE_HS_ADV_F_DISC_GEN;
-    adv_fields.name = (uint8_t *)name;
-    adv_fields.name_len = strlen(name);
-    adv_fields.name_is_complete = 1;
-
-    /* Advertise the 128-bit service UUID so Web Bluetooth can filter on it */
     adv_fields.uuids128 = &svc_uuid;
     adv_fields.num_uuids128 = 1;
     adv_fields.uuids128_is_complete = 1;
-
     ble_gap_adv_set_fields(&adv_fields);
+
+    /* Scan response: complete device name */
+    rsp_fields.name = (const uint8_t *)name;
+    rsp_fields.name_len = name_len;
+    rsp_fields.name_is_complete = 1;
+    ble_gap_adv_rsp_set_fields(&rsp_fields);
 
     /* CRITICAL: {0} params default to BLE_GAP_CONN_MODE_NON (visible in scans
      * but connection requests are ignored at the controller!). Must be
@@ -705,7 +715,7 @@ esp_err_t ble_start(void)
     }
 
     /* Set device name */
-    ble_svc_gap_device_name_set("gyroX");
+    ble_svc_gap_device_name_set(s_cfg.device_name[0] ? s_cfg.device_name : WEB_AP_SSID);
 
     /* Register the GATT service */
     int rc = ble_gatts_count_cfg(gyro_svc_defs);

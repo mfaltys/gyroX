@@ -79,12 +79,12 @@ esp_err_t config_load(void)
         dirty = true;
     }
 
-    sz = sizeof(s_cfg.web_ap_ssid);
-    if (nvs_get_str(handle, CFG_WEB_AP_SSID, s_cfg.web_ap_ssid, &sz) != ESP_OK || sz == 0) {
-        strncpy(s_cfg.web_ap_ssid, WEB_AP_SSID, sizeof(s_cfg.web_ap_ssid) - 1);
-        s_cfg.web_ap_ssid[sizeof(s_cfg.web_ap_ssid) - 1] = '\0';
+    sz = sizeof(s_cfg.device_name);
+    if (nvs_get_str(handle, CFG_DEVICE_NAME, s_cfg.device_name, &sz) != ESP_OK || sz == 0) {
+        s_cfg.device_name[0] = '\0';
         dirty = true;
     }
+    s_cfg.device_name[sizeof(s_cfg.device_name) - 1] = '\0';
 
     if (dirty) {
         ESP_LOGI(TAG, "Writing first-boot defaults to NVS");
@@ -106,7 +106,7 @@ esp_err_t config_load(void)
         nvs_set_i32(handle, CFG_LEDS_COLOR, (int32_t)s_cfg.leds_color);
         nvs_set_i32(handle, CFG_LEDS_BRIGHT, s_cfg.leds_bright);
         nvs_set_blob(handle, CFG_GYRO_Z_OFFSET, &s_cfg.gyro_z_offset, sizeof(s_cfg.gyro_z_offset));
-        nvs_set_str(handle, CFG_WEB_AP_SSID, s_cfg.web_ap_ssid);
+        nvs_set_str(handle, CFG_DEVICE_NAME, s_cfg.device_name);
         nvs_commit(handle);
     }
 
@@ -147,7 +147,7 @@ esp_err_t config_save(void)
     if (ret == ESP_OK) ret = nvs_set_i32(handle, CFG_LEDS_COLOR, (int32_t)s_cfg.leds_color);
     if (ret == ESP_OK) ret = nvs_set_i32(handle, CFG_LEDS_BRIGHT, s_cfg.leds_bright);
     if (ret == ESP_OK) ret = nvs_set_blob(handle, CFG_GYRO_Z_OFFSET, &s_cfg.gyro_z_offset, sizeof(s_cfg.gyro_z_offset));
-    if (ret == ESP_OK) ret = nvs_set_str(handle, CFG_WEB_AP_SSID, s_cfg.web_ap_ssid);
+    if (ret == ESP_OK) ret = nvs_set_str(handle, CFG_DEVICE_NAME, s_cfg.device_name);
 
     if (ret == ESP_OK) {
         ret = nvs_commit(handle);
@@ -183,8 +183,7 @@ void config_apply_defaults(void)
     s_cfg.leds_on = DEF_LEDS_ON;
     s_cfg.leds_color = DEF_LEDS_COLOR;
     s_cfg.leds_bright = DEF_LEDS_BRIGHT;
-    strncpy(s_cfg.web_ap_ssid, WEB_AP_SSID, sizeof(s_cfg.web_ap_ssid) - 1);
-    s_cfg.web_ap_ssid[sizeof(s_cfg.web_ap_ssid) - 1] = '\0';
+    s_cfg.device_name[0] = '\0';
 }
 
 esp_err_t config_set_from_json(cJSON *root)
@@ -252,11 +251,24 @@ esp_err_t config_set_from_json(cJSON *root)
         if (s_cfg.leds_color != (uint32_t)val) { s_cfg.leds_color = (uint32_t)val; changed = true; }
     }
 
-    item = cJSON_GetObjectItem(root, CFG_WEB_AP_SSID);
+    item = cJSON_GetObjectItem(root, CFG_DEVICE_NAME);
     if (item && cJSON_IsString(item)) {
-        if (strcmp(s_cfg.web_ap_ssid, item->valuestring) != 0) {
-            strncpy(s_cfg.web_ap_ssid, item->valuestring, sizeof(s_cfg.web_ap_ssid) - 1);
-            s_cfg.web_ap_ssid[sizeof(s_cfg.web_ap_ssid) - 1] = '\0';
+        /* Sanitize: strip control chars, trim spaces, cap at 20 chars so the
+         * derived AP SSID (gyroX-<name>) stays within the 32-char limit. */
+        char clean[sizeof(s_cfg.device_name)];
+        size_t out = 0;
+        const char *p = item->valuestring;
+        while (*p == ' ') p++;
+        for (; *p && out < sizeof(clean) - 1; p++) {
+            unsigned char c = (unsigned char)*p;
+            if (c < 0x20 || c == 0x7f || c == '"' || c == '\\') continue;
+            clean[out++] = (char)c;
+        }
+        while (out > 0 && clean[out - 1] == ' ') out--;
+        clean[out] = '\0';
+        if (strcmp(s_cfg.device_name, clean) != 0) {
+            strncpy(s_cfg.device_name, clean, sizeof(s_cfg.device_name) - 1);
+            s_cfg.device_name[sizeof(s_cfg.device_name) - 1] = '\0';
             changed = true;
         }
     }

@@ -8,6 +8,7 @@
 #include "ble.h"
 
 #include <string.h>
+#include <stdio.h>
 #include <esp_err.h>
 #include <esp_log.h>
 #include <esp_wifi.h>
@@ -29,6 +30,17 @@
 #include <mdns.h>
 
 static const char *TAG = "WEB";
+
+/* AP SSID: gyroX-<device_name>, or plain gyroX when unnamed */
+static void get_ap_ssid(char *out, size_t n)
+{
+    if (s_cfg.device_name[0]) {
+        snprintf(out, n, "gyroX-%s", s_cfg.device_name);
+    } else {
+        strncpy(out, WEB_AP_SSID, n - 1);
+        out[n - 1] = '\0';
+    }
+}
 
 static httpd_handle_t s_server = NULL;
 static TaskHandle_t s_dns_task = NULL;
@@ -208,9 +220,13 @@ static esp_err_t wifi_ap_start(void)
     inet_pton(AF_INET, WEB_AP_NETMASK, &info.netmask);
     esp_netif_set_ip_info(ap_netif, &info);
 
+    /* AP SSID: gyroX-<device_name>, or plain gyroX when unnamed */
+    char ssid[33];
+    get_ap_ssid(ssid, sizeof(ssid));
+
     wifi_config_t ap = {0};
-    strncpy((char *)ap.ap.ssid, s_cfg.web_ap_ssid, sizeof(ap.ap.ssid) - 1);
-    ap.ap.ssid_len = strlen(s_cfg.web_ap_ssid);
+    strncpy((char *)ap.ap.ssid, ssid, sizeof(ap.ap.ssid) - 1);
+    ap.ap.ssid_len = strlen(ssid);
     ap.ap.channel = WEB_AP_CHANNEL;
     ap.ap.authmode = WIFI_AUTH_OPEN;
     ap.ap.max_connection = 4;
@@ -226,7 +242,7 @@ static esp_err_t wifi_ap_start(void)
 
     start_dns();
     mdns_start();
-    ESP_LOGI(TAG, "AP '%s' up at " IPSTR, s_cfg.web_ap_ssid, IP2STR(&s_ap_ip));
+    ESP_LOGI(TAG, "AP '%s' up at " IPSTR, ssid, IP2STR(&s_ap_ip));
     return ESP_OK;
 }
 
@@ -333,7 +349,7 @@ static esp_err_t config_get_handler(httpd_req_t *req)
     cJSON_AddNumberToObject(r, "leds_on", s_cfg.leds_on);
     cJSON_AddNumberToObject(r, "leds_color", (double)s_cfg.leds_color);
     cJSON_AddNumberToObject(r, "leds_bright", s_cfg.leds_bright);
-    cJSON_AddStringToObject(r, "web_ap_ssid", s_cfg.web_ap_ssid);
+    cJSON_AddStringToObject(r, "device_name", s_cfg.device_name);
     return json_reply(req, r);
 }
 
@@ -527,6 +543,8 @@ void web_start(void)
         httpd_register_uri_handler(s_server, &u);
     }
 
-    ESP_LOGI(TAG, "Web UI: http://" IPSTR "/ (AP '%s')", IP2STR(&s_ap_ip), s_cfg.web_ap_ssid);
+    char ssid[33];
+    get_ap_ssid(ssid, sizeof(ssid));
+    ESP_LOGI(TAG, "Web UI: http://" IPSTR "/ (AP '%s')", IP2STR(&s_ap_ip), ssid);
 }
 

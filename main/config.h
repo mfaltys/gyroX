@@ -66,7 +66,7 @@
 /* ------------------- Web UI (AP mode) ------------------- */
 #define WEB_BTN_HOLD_MS   3000      /* hold BOOT button this long after boot  */
 #define WEB_BTN_POLL_MS   20        /* button task sampling period            */
-#define WEB_AP_SSID       "gyroX"
+#define WEB_AP_SSID       "gyroX"   /* base name: AP = gyroX-<dev>, BLE = <dev> */
 #define WEB_AP_PASSWORD   ""        /* open AP                                   */
 #define WEB_AP_CHANNEL    1
 #define WEB_AP_IP         "192.168.4.1"
@@ -99,7 +99,7 @@
 #define CFG_LEDS_ON          "leds_on"        /* int32  0/1                             */
 #define CFG_LEDS_COLOR       "leds_color"     /* int32  packed 0xRRGGBB                 */
 #define CFG_LEDS_BRIGHT      "leds_bright"    /* int32  0..100 percent                  */
-#define CFG_WEB_AP_SSID      "web_ap_ssid"    /* string                                 */
+#define CFG_DEVICE_NAME      "dev_name"       /* string, max 20 chars (BLE + AP name)   */
 
 /* ------------------- Compile-time defaults ------------------- */
 #define DEF_CFG_VERSION          1
@@ -134,7 +134,7 @@ typedef struct {
     int32_t leds_on;         /* 0/1 */
     uint32_t leds_color;     /* packed 0xRRGGBB */
     int32_t leds_bright;     /* 0..100 percent */
-    char    web_ap_ssid[32];
+    char    device_name[21]; /* BLE name; AP = gyroX-<name>     */
 } gyrox_config_t;
 
 extern gyrox_config_t s_cfg;

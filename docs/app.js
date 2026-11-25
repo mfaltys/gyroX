@@ -194,6 +194,7 @@ async function openConnection() {
     log('Firmware ' + deviceVersion + ' (ble protocol v' + bleVer + ')', 'ok');
   } catch (e) { /* pill stays generic */ }
   await loadCfg();
+  updatePill();
   /* One-shot health check - a snapshot, not a live feed (see refreshState). */
   try { await refreshState(); }
   catch (e) { log('State read failed: ' + e.message, 'err'); }
@@ -241,6 +242,21 @@ function applyCfg(c) {
   el('vLedsColor').textContent = hexc;
   el('mLedsBright').value = (c.leds_bright === undefined ? 100 : c.leds_bright);
   el('vBright').textContent = el('mLedsBright').value;
+  el('fDevName').value = c.device_name || '';
+  updateNamePreview();
+}
+
+/* Live preview of the derived names as the user types */
+function updateNamePreview() {
+  const n = el('fDevName').value.trim();
+  el('vBtName').textContent = n || 'gyroX';
+  el('vApName').textContent = n ? 'gyroX-' + n : 'gyroX';
+}
+
+/* Header pill: device name + firmware version (matters with multiple cars) */
+function updatePill() {
+  const n = el('fDevName').value.trim() || 'gyroX';
+  el('ver').textContent = n + ' · ' + (deviceVersion || '?');
 }
 
 function collectCfg() {
@@ -260,6 +276,7 @@ function collectCfg() {
     leds_on: el('mLedsOn').checked ? 1 : 0,
     leds_color: parseInt(el('mLedsColor').value.slice(1), 16),
     leds_bright: Number(el('mLedsBright').value),
+    device_name: el('fDevName').value.trim(),
   };
 }
 
@@ -717,6 +734,7 @@ el('btnCal').addEventListener('click', calibrate);
 el('btnResetHead').addEventListener('click', resetHead);
 el('btnOta').addEventListener('click', otaUpload);
 el('btnFlashVersion').addEventListener('click', otaUpload);
+el('fDevName').addEventListener('input', updateNamePreview);
 el('otaVersion').addEventListener('change', updateOtaStatus);
 el('btnRollback').addEventListener('click', rollbackNow);
 
