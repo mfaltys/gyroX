@@ -5,6 +5,7 @@
 #include "pwm_in.h"
 #include "servo.h"
 #include "leds.h"
+#include "ble.h"
 
 #include <string.h>
 #include <esp_err.h>
@@ -500,6 +501,10 @@ static const uri_map_t s_uris[] = {
 
 void web_start(void)
 {
+    /* BLE and WiFi don't run concurrently on this device: stop BLE before
+     * bringing up the softAP. BLE restarts on the next power cycle. */
+    ble_stop();
+
     wifi_ap_start();
 
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();

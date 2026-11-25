@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>gyroX Config — BLE</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- Header / Connection -->
+<header class="bar">
+  <div class="bar-left">
+    <span id="conn-dot" class="dot"></span>
+    <span id="conn-status">Not connected</span>
+  </div>
+  <button id="btn-connect" class="btn btn-primary">Connect</button>
+</header>
+
+<!-- Device Info -->
+<section class="card" id="device-info" style="display:none">
+  <h2>Device</h2>
+  <div class="row">
+    <label class="label">Model</label>
+    <span id="info-model" class="value">—</span>
+  </div>
+  <div class="row">
+    <label class="label">Firmware</label>
+    <span id="info-version" class="value">—</span>
+  </div>
+</section>
+
+<!-- Config -->
+<section class="card" id="config-section" style="display:none">
+  <h2>Configuration</h2>
+
+  <div class="field">
+    <label class="field-label">Gyro gain</label>
+    <input type="number" id="f-gyro_gain" min="0" max="500" step="1">
+    <span class="field-unit">×0.1 % per 100°/s</span>
+  </div>
+
+  <div class="field">
+    <label class="field-label">Gyro mode</label>
+    <select id="f-gyro_mode">
+      <option value="0">Rate</option>
+      <option value="1">Heading hold</option>
+    </select>
+  </div>
+
+  <div class="field">
+    <label class="field-label">Gyro reverse</label>
+    <select id="f-gyro_reverse">
+      <option value="0">No</option>
+      <option value="1">Yes</option>
+    </select>
+  </div>
+
+  <div class="field">
+    <label class="field-label">Steer reverse</label>
+    <select id="f-steer_reverse">
+      <option value="0">No</option>
+      <option value="1">Yes</option>
+    </select>
+  </div>
+
+  <div class="field">
+    <label class="field-label">Steer deadband</label>
+    <input type="number" id="f-steer_deadband" min="0" max="50" step="1">
+    <span class="field-unit">%</span>
+  </div>
+
+  <div class="field">
+    <label class="field-label">Steer trim</label>
+    <input type="number" id="f-steer_trim" min="-100" max="100" step="1">
+    <span class="field-unit">%</span>
+  </div>
+
+  <div class="field">
+    <label class="field-label">Servo min (µs)</label>
+    <input type="number" id="f-servo_min_us" min="100" max="4000" step="10">
+  </div>
+
+  <div class="field">
+    <label class="field-label">Servo center (µs)</label>
+    <input type="number" id="f-servo_center_us" min="100" max="4000" step="10">
+  </div>
+
+  <div class="field">
+    <label class="field-label">Servo max (µs)</label>
+    <input type="number" id="f-servo_max_us" min="100" max="4000" step="10">
+  </div>
+
+  <div class="field">
+    <label class="field-label">Heading hold P</label>
+    <input type="number" id="f-hold_p" min="0" max="500" step="1">
+    <span class="field-unit">×0.1 °/s per °</span>
+  </div>
+
+  <div class="field">
+    <label class="field-label">Profile</label>
+    <select id="f-profile">
+      <option value="0">General</option>
+      <option value="1">Drift</option>
+      <option value="2">Bash</option>
+      <option value="3">Custom</option>
+    </select>
+  </div>
+
+  <div class="field">
+    <label class="field-label">LEDs</label>
+    <select id="f-leds_on">
+      <option value="0">Off</option>
+      <option value="1">On</option>
+    </select>
+  </div>
+
+  <div class="field">
+    <label class="field-label">LED brightness</label>
+    <input type="number" id="f-leds_bright" min="0" max="100" step="1">
+    <span class="field-unit">%</span>
+  </div>
+
+  <div class="field">
+    <label class="field-label">LED color</label>
+    <input type="color" id="f-leds_color">
+  </div>
+
+  <div class="field">
+    <label class="field-label">Gyro DLPF (Hz)</label>
+    <select id="f-gyro_dlpf">
+      <option value="5">5</option>
+      <option value="10">10</option>
+      <option value="21">21</option>
+      <option value="44">44</option>
+    </select>
+  </div>
+
+  <div class="field">
+    <label class="field-label">Gyro full scale (°/s)</label>
+    <select id="f-gyro_fs">
+      <option value="250">250</option>
+      <option value="500">500</option>
+      <option value="1000">1000</option>
+      <option value="2000">2000</option>
+    </select>
+  </div>
+
+  <div class="field">
+    <label class="field-label">AP SSID</label>
+    <input type="text" id="f-web_ap_ssid" maxlength="31">
+  </div>
+
+  <div class="field actions">
+    <button id="btn-get-config" class="btn btn-outline">Read from device</button>
+    <button id="btn-save-config" class="btn btn-primary">Save to device</button>
+  </div>
+
+  <div class="field actions">
+    <button id="btn-calibrate" class="btn btn-outline">Calibrate gyro <span class="small">(keep still)</span></button>
+    <button id="btn-reset-heading" class="btn btn-outline">Reset heading</button>
+  </div>
+</section>
+
+<!-- OTA -->
+<section class="card" id="ota-section" style="display:none">
+  <h2>Firmware update (OTA)</h2>
+  <p class="hint">Upload a .bin file (e.g. from GitHub Releases). The device reboots after a successful flash.</p>
+
+  <div class="field">
+    <label class="field-label">Firmware file</label>
+    <input type="file" id="f-ota-file" accept=".bin">
+  </div>
+
+  <div class="field actions">
+    <button id="btn-ota-upload" class="btn btn-primary" disabled>Upload & flash</button>
+  </div>
+
+  <div id="ota-progress" style="display:none">
+    <div class="progress-bar"><div class="progress-fill"></div></div>
+    <div id="ota-pct" class="small">0%</div>
+    <div id="ota-msg" class="small muted"></div>
+  </div>
+</section>
+
+<!-- Actions -->
+<section class="card" id="actions-section" style="display:none">
+  <h2>Actions</h2>
+  <div class="field actions">
+    <button id="btn-disconnect" class="btn btn-danger">Disconnect</button>
+  </div>
+</section>
+
+<!-- Log -->
+<section class="card">
+  <h2>Log</h2>
+  <div id="log" class="log"></div>
+</section>
+
+<script src="app.js"></script>
+</body>
+</html>

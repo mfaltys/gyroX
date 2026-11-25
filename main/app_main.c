@@ -19,6 +19,7 @@
 #include "servo.h"
 #include "mixing.h"
 #include "web.h"
+#include "ble.h"
 #include "leds.h"
 
 #include <driver/gpio.h>
@@ -92,6 +93,10 @@ void app_main(void)
     leds_init();   /* WS2812B rail: sets up RMT, applies saved on/off + color */
 
     xTaskCreate(mixing_task, "mixing", 3072, NULL, 6, NULL);
+
+    /* BLE: always-on config + OTA channel. Stopped when the AP comes up,
+     * restarted on next power cycle. */
+    ble_start();
 
     /* Web UI: hold the boot button ~3 s AFTER power-up. GPIO 9 is a strapping
      * pin (low at reset = ROM download mode), so it cannot be sampled at
