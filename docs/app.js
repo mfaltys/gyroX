@@ -27,6 +27,7 @@ let connected = false;
 let otaBusy = false;
 let pollBusy = false;
 let pollGen = 0;      // generation token — kills stale polling loops
+let connGen = 0;      // generation token — cancels superseded connect attempts
 let stallCount = 0;   // consecutive poll failures → auto-reconnect
 
 /* ---------------------------- Log --------------------------------- */
@@ -112,18 +113,44 @@ async function connect() {
   }
 }
 
-/* GATT work shared by first connect and stall auto-reconnect.
- * Assumes the global `device` is set. */
+/* GATT setup shared by first connect and stall auto-reconnect.
+ * Retries up to 3 times: Android Chrome sporadically drops the link right
+ * after connect() resolves (status-133-style failure) — the error surfaces
+ * as "GATT Server is disconnected. Cannot retrieve services." on the very
+ * first getPrimaryService(). A plain second attempt almost always lands. */
 async function openConnection() {
-  log('Connecting GATT…');
-  server = await device.gatt.connect();
-  const svc = await server.getPrimaryService(SVC_UUID);
-  chrInfo = await svc.getCharacteristic(CHR_INFO);
-  chrCfg  = await svc.getCharacteristic(CHR_CFG);
-  chrOtac = await svc.getCharacteristic(CHR_OTAC);
-  chrOtad = await svc.getCharacteristic(CHR_OTAD);
-  chrCfg.addEventListener('characteristicvaluechanged', cfgNotifyHandler);
-  await chrCfg.startNotifications();
+  const dev = device;
+  if (!dev) throw new Error('No device selected');
+  const gen = ++connGen;
+
+  let lastErr = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    if (gen !== connGen) return false;
+    try {
+      log(attempt === 1 ? 'Connecting GATT…' : 'Connect attempt ' + attempt + '…');
+      server = await dev.gatt.connect();
+      if (!server.connected) throw new Error('Link dropped during connect');
+      const svc = await server.getPrimaryService(SVC_UUID);
+      chrInfo = await svc.getCharacteristic(CHR_INFO);
+      chrCfg  = await svc.getCharacteristic(CHR_CFG);
+      chrOtac = await svc.getCharacteristic(CHR_OTAC);
+      chrOtad = await svc.getCharacteristic(CHR_OTAD);
+      chrCfg.addEventListener('characteristicvaluechanged', cfgNotifyHandler);
+      await chrCfg.startNotifications();
+      lastErr = null;
+      break;
+    } catch (e) {
+      lastErr = e;
+      if (gen !== connGen) return false;
+      if (attempt < 3) {
+        log('Attempt ' + attempt + ' failed: ' + e.message + ' — retrying…', 'err');
+        await sleep(800);
+      }
+    }
+  }
+  if (gen !== connGen) return false;
+  if (lastErr) throw lastErr;
+
   setConnectedUI(true);
   log('Connected', 'ok');
   try {
@@ -134,21 +161,24 @@ async function openConnection() {
   stallCount = 0;
   await loadCfg();
   startPolling();
+  return true;
 }
 
 function onDisconnected() {
+  pollGen++;          // stop any polling loops
+  pollBusy = false;
+  if (!connected) return;   // dropped during setup — the retry loop recovers
   log('Device disconnected', 'err');
   if (otaBusy) { el('otaMsg').textContent = 'Connection lost — device rebooting.'; otaBusy = false; }
-  pollGen++;          // stop any in-flight polling loops
-  pollBusy = false;
   device = null; server = null;
   setConnectedUI(false);
 }
 
 function disconnect() {
+  connGen++;          // cancel any in-flight (re)connect attempts
+  setConnectedUI(false);   // mark down first so the disconnect event is a no-op
   if (device && device.gatt.connected) device.gatt.disconnect();
   device = null; server = null;
-  setConnectedUI(false);
   log('Disconnected');
 }
 
