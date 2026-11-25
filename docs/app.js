@@ -15,11 +15,10 @@ const CHR_OTAC = '0000a103-0000-1000-8000-00805f9b34fb';
 const CHR_OTAD = '0000a104-0000-1000-8000-00805f9b34fb';
 
 const MTU_CHUNK   = 480;  // OTA data bytes per WRITE (device MTU is 517)
-/* Measured over BLE (write-with-response): 1,248,368 bytes in ~409 s.
- * Windowed write-without-response measured: 1,228,480 bytes in ~296 s
- * (~4.15 KB/s) - the rate is set by the device's flash pipeline
- * (~4 KB sector erases), which the flow-control window tracks exactly. */
-const OTA_BYTES_PER_SEC = 4150;
+/* Measured over BLE, windowed write-without-response: 1,250,992 bytes in
+ * ~24.8 s (~50 KB/s) on a phone - throughput is stack-dependent (older
+ * setups measured ~4.15 KB/s). Used only for the ETA in the confirm. */
+const OTA_BYTES_PER_SEC = 50000;
 /* Flow control: the device acks every ~4 KB actually written to flash.
  * Never more than OTA_WINDOW_BYTES of unacked data in flight, else the
  * backlog grows behind the device and Chrome's ~30 s GATT op timeout
@@ -557,8 +556,6 @@ function updateOtaStatus() {
   }
   btn.style.display = actionable ? '' : 'none';
   btn.disabled = !connected || !actionable;
-  el('otaMin').textContent = String(Math.max(1, Math.round(sel.size / OTA_BYTES_PER_SEC / 60)));
-  el('otaDl').href = FIRMWARE_BASE_URL + '/' + sel.tag + '/app.bin';
 }
 
 async function downloadFirmware(rel) {
