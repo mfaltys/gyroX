@@ -122,8 +122,10 @@ function setConnectedUI(on) {
   el('btnLoad').disabled = !on;
   el('btnRollback').disabled = !on;
   el('btnSaveName').disabled = !on;
+  /* The gyro switch only appears once there is something to control. */
   el('swGyro').checked = true;   /* device always arms at boot */
   el('swGyro').disabled = !on;
+  el('swGyro').closest('.gyro-switch').style.display = on ? '' : 'none';
   updateOtaStatus();
 }
 
