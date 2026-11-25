@@ -246,15 +246,17 @@ function applyCfg(c) {
   el('fDevName').value = c.device_name || '';
 }
 
-/* Saves just the device name: BLE picker shows it after the device
- * re-advertises (i.e. after disconnect), AP name after reboot. */
+/* Saves just the device name. Visible immediately in the header pill; the
+ * BLE picker shows it after disconnect (a connected device doesn't
+ * advertise), and the AP name changes after reboot. */
 async function saveDeviceName() {
   if (!connected) return;
   const name = el('fDevName').value.trim();
   try {
     const r = await sendCommand({ cmd: 'set_config', device_name: name });
     if (!r.ok) throw new Error(r.error || 'save failed');
-    log('Device name saved: "' + (name || 'gyroX') + '" - BLE name after reconnect, AP name after reboot', 'ok');
+    updatePill();
+    log('Device name saved: "' + (name || 'gyroX') + '" - picker shows it after you disconnect, AP name after reboot', 'ok');
   } catch (e) {
     log('Name save failed: ' + e.message, 'err');
   }

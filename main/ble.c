@@ -267,6 +267,10 @@ static int chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
                 if (err == ESP_OK) {
                     gyro_apply_sensor_config();
                     leds_apply();
+                    /* Keep the GAP-read name in sync without a reboot; the
+                     * advertisement rebuilds from s_cfg on next advertise. */
+                    ble_svc_gap_device_name_set(s_cfg.device_name[0] ? s_cfg.device_name : WEB_AP_SSID);
+                    ESP_LOGI(TAG, "Config saved to NVS");
                     const char *resp = "{\"ok\":true}";
                     notify_json(conn_handle, chr_cfg_handle, resp);
                 } else {
