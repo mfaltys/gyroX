@@ -378,6 +378,11 @@ el('mLedsBright').addEventListener('change', () => { if (connected) saveCfg(); }
  * (the plain browser_download_url does NOT — never fetch that from a page). */
 
 const REPO = 'mfaltys/gyroX';
+/* Firmware binaries are served from the unixvoid-builds S3 bucket (the
+ * .s3.amazonaws.com form implies us-east-1 — same bucket scalex uses).
+ * GitHub release-asset downloads are NOT CORS-accessible from a browser,
+ * so Releases act as the version index and S3 serves the bytes. */
+const FIRMWARE_BASE_URL = 'https://unixvoid-builds.s3.amazonaws.com/gyrox';
 
 function parseSemver(s) {
   const m = /v?(\d+)\.(\d+)\.(\d+)/.exec(s || '');
@@ -396,20 +401,20 @@ async function fetchReleases() {
                           { headers: { Accept: 'application/vnd.github+json' } });
   if (!res.ok) throw new Error('GitHub API ' + res.status);
   const raw = await res.json();
-  const list = raw.filter(r => !r.draft).map(r => {
-    const bin = (r.assets || []).find(a => a.name.endsWith('.bin'));
-    if (!bin) return null;
-    const sha = (r.assets || []).find(a => a.name.endsWith('.sha256'));
-    return {
+  const list = raw
+    .filter(r => !r.draft && (r.assets || []).some(a => a.name.endsWith('.bin')))
+    .sort((a, b) => {
+      const A = parseSemver(a.tag_name), B = parseSemver(b.tag_name);
+      if (A && B) return cmpSemver(B, A);   // newest semver first
+      return new Date(b.published_at) - new Date(a.published_at);
+    })
+    .map(r => ({
       tag: r.tag_name,
       date: (r.published_at || '').slice(0, 10),
-      size: bin.size,
-      binId: bin.id,
-      shaId: sha ? sha.id : null,
+      size: r.assets.find(a => a.name.endsWith('.bin')).size,
       prerelease: !!r.prerelease,
       notes: (r.body || '').split('\n').filter(l => l.trim()).slice(0, 2).join(' · '),
-    };
-  }).filter(Boolean);
+    }));
   try { localStorage.setItem('gyroX_releases', JSON.stringify({ t: Date.now(), list })); } catch (e) { /* ignore */ }
   return list;
 }
@@ -472,16 +477,14 @@ function updateOtaMeta() {
 }
 
 async function downloadFirmware(rel) {
-  const res = await fetch('https://api.github.com/repos/' + REPO + '/releases/assets/' + rel.binId,
-                          { headers: { Accept: 'application/octet-stream' } });
+  const url = `${FIRMWARE_BASE_URL}/${rel.tag}/app.bin`;
+  const res = await fetch(url);
   if (!res.ok) throw new Error('HTTP ' + res.status);
   return new Uint8Array(await res.arrayBuffer());
 }
 
 async function verifySha256(bytes, rel) {
-  if (!rel.shaId) return true;   // no sidecar — the device validates the image anyway
-  const res = await fetch('https://api.github.com/repos/' + REPO + '/releases/assets/' + rel.shaId,
-                          { headers: { Accept: 'application/octet-stream' } });
+  const res = await fetch(`${FIRMWARE_BASE_URL}/${rel.tag}/app.bin.sha256`);
   if (!res.ok) throw new Error('SHA fetch HTTP ' + res.status);
   const expected = (await res.text()).trim().split(/\s+/)[0].toLowerCase();
   const digest = await crypto.subtle.digest('SHA-256', bytes);
@@ -548,20 +551,19 @@ async function otaUpload() {
       log('Download failed: ' + e.message, 'err');
       return;
     }
-    if (rel.shaId) {
-      el('otaMsg').textContent = 'Verifying SHA-256…';
-      try {
-        if (!(await verifySha256(bytes, rel))) {
-          el('otaMsg').textContent = 'SHA-256 mismatch — download corrupted, aborted.';
-          log('SHA-256 mismatch — aborted', 'err');
-          return;
-        }
-        log('SHA-256 verified', 'ok');
-      } catch (e) {
-        el('otaMsg').textContent = 'SHA-256 check failed: ' + e.message;
-        log('SHA check failed: ' + e.message, 'err');
+    /* CI always uploads a .sha256 sidecar next to the .bin — verify it */
+    el('otaMsg').textContent = 'Verifying SHA-256…';
+    try {
+      if (!(await verifySha256(bytes, rel))) {
+        el('otaMsg').textContent = 'SHA-256 mismatch — download corrupted, aborted.';
+        log('SHA-256 mismatch — aborted', 'err');
         return;
       }
+      log('SHA-256 verified', 'ok');
+    } catch (e) {
+      el('otaMsg').textContent = 'SHA-256 check failed: ' + e.message;
+      log('SHA check failed: ' + e.message, 'err');
+      return;
     }
   }
   if (!confirm('Flash ' + label + ' (' + (bytes.length / 1048576).toFixed(2) + ' MB, ≈2 min over BLE)? Keep the car parked.')) return;
