@@ -263,6 +263,7 @@ static int chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
                     notify_json(conn_handle, chr_cfg_handle, json);
                     free(json);
                 }
+                cJSON_Delete(r);   /* was missing — leaked every 200ms poll until heap exhausted */
                 return 0;
             }
 

@@ -26,6 +26,8 @@ let notifyResolve = null, notifyBuf = '';
 let connected = false;
 let otaBusy = false;
 let pollBusy = false;
+let pollGen = 0;      // generation token — kills stale polling loops
+let stallCount = 0;   // consecutive poll failures → auto-reconnect
 
 /* ---------------------------- Log --------------------------------- */
 function esc(s) {
@@ -50,8 +52,9 @@ function setStatus(text, cls) {
 /* -------- Command transport (JSON over CONFIG characteristic) ----- */
 /* Promise registered BEFORE the write so a fast response is never
  * missed. Responses arrive as notifications on 0xA102. */
-function sendCommand(cmd) {
+function sendCommand(cmd, timeoutMs) {
   if (!connected) return Promise.reject(new Error('Not connected'));
+  const tmo = timeoutMs || 5000;
   return new Promise((resolve, reject) => {
     notifyResolve = (text) => {
       try { resolve(JSON.parse(text)); }
@@ -61,7 +64,7 @@ function sendCommand(cmd) {
       .catch(e => { notifyResolve = null; reject(e); });
     setTimeout(() => {
       if (notifyResolve) { notifyResolve = null; reject(new Error('Device did not respond (timeout)')); }
-    }, 5000);
+    }, tmo);
   });
 }
 
@@ -91,6 +94,8 @@ function setConnectedUI(on) {
   el('btnOta').disabled = !on || !el('otaFile').files.length;
 }
 
+function cfgNotifyHandler(ev) { onChrCfgValue(ev.target.value); }
+
 async function connect() {
   if (!navigator.bluetooth) { log('Web Bluetooth not available — use Chrome/Edge on Android', 'err'); return; }
   if (connected) { disconnect(); return; }
@@ -98,24 +103,7 @@ async function connect() {
     log('Requesting device…');
     device = await navigator.bluetooth.requestDevice({ filters: [{ services: [SVC_UUID] }] });
     device.addEventListener('gattserverdisconnected', onDisconnected);
-    log('Connecting GATT…');
-    server = await device.gatt.connect();
-    const svc = await server.getPrimaryService(SVC_UUID);
-    chrInfo = await svc.getCharacteristic(CHR_INFO);
-    chrCfg  = await svc.getCharacteristic(CHR_CFG);
-    chrOtac = await svc.getCharacteristic(CHR_OTAC);
-    chrOtad = await svc.getCharacteristic(CHR_OTAD);
-    chrCfg.addEventListener('characteristicvaluechanged', ev => onChrCfgValue(ev.target.value));
-    await chrCfg.startNotifications();
-    setConnectedUI(true);
-    log('Connected', 'ok');
-    try {
-      const info = JSON.parse(new TextDecoder().decode((await chrInfo.readValue()).buffer));
-      if (info.version) el('ver').textContent = 'fw: ' + info.version;
-      log('Firmware ' + info.version, 'ok');
-    } catch (e) { /* pill stays generic */ }
-    await loadCfg();
-    pollLoop();
+    await openConnection();
   } catch (e) {
     log('Connection failed: ' + e.message, 'err');
     if (device) try { device.gatt.disconnect(); } catch (_) {}
@@ -124,9 +112,35 @@ async function connect() {
   }
 }
 
+/* GATT work shared by first connect and stall auto-reconnect.
+ * Assumes the global `device` is set. */
+async function openConnection() {
+  log('Connecting GATT…');
+  server = await device.gatt.connect();
+  const svc = await server.getPrimaryService(SVC_UUID);
+  chrInfo = await svc.getCharacteristic(CHR_INFO);
+  chrCfg  = await svc.getCharacteristic(CHR_CFG);
+  chrOtac = await svc.getCharacteristic(CHR_OTAC);
+  chrOtad = await svc.getCharacteristic(CHR_OTAD);
+  chrCfg.addEventListener('characteristicvaluechanged', cfgNotifyHandler);
+  await chrCfg.startNotifications();
+  setConnectedUI(true);
+  log('Connected', 'ok');
+  try {
+    const info = JSON.parse(new TextDecoder().decode((await chrInfo.readValue()).buffer));
+    if (info.version) el('ver').textContent = 'fw: ' + info.version;
+    log('Firmware ' + info.version, 'ok');
+  } catch (e) { /* pill stays generic */ }
+  stallCount = 0;
+  await loadCfg();
+  startPolling();
+}
+
 function onDisconnected() {
   log('Device disconnected', 'err');
   if (otaBusy) { el('otaMsg').textContent = 'Connection lost — device rebooting.'; otaBusy = false; }
+  pollGen++;          // stop any in-flight polling loops
+  pollBusy = false;
   device = null; server = null;
   setConnectedUI(false);
 }
@@ -362,7 +376,7 @@ async function otaUpload() {
 
 /* ---------------------- Telemetry polling ------------------------- */
 async function pollOnce() {
-  const s = await sendCommand({ cmd: 'get_state' });
+  const s = await sendCommand({ cmd: 'get_state' }, 1500);
   el('rx').textContent = s.rx;
   el('rate').textContent = s.rate_z;
   el('heading').textContent = Number(s.heading).toFixed(1);
@@ -371,15 +385,48 @@ async function pollOnce() {
             s.rx_valid ? '' : 'err');
 }
 
-async function pollLoop() {
-  if (!connected) return;
-  if (pollBusy) { schedulePoll(); return; }
-  pollBusy = true;
-  try { await pollOnce(); } catch (e) { /* transient — keep looping */ }
-  pollBusy = false;
-  schedulePoll();
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+/* Single loop per connection "generation". The gen token guarantees stale
+ * loops exit after a reconnect instead of multiplying chains. */
+async function pollingLoop(gen) {
+  while (connected && gen === pollGen) {
+    if (!pollBusy) {
+      pollBusy = true;
+      try {
+        await pollOnce();
+        stallCount = 0;
+      } catch (e) {
+        stallCount++;
+        if (stallCount >= 5) {
+          /* Link is wedged (e.g. silent drop) — GATT ops queue forever and
+           * telemetry freezes. Drop and reconnect automatically. */
+          stallCount = 0;
+          pollBusy = false;
+          log('Connection stalled — reconnecting…', 'err');
+          const dev = device;
+          if (dev && dev.gatt.connected) try { dev.gatt.disconnect(); } catch (_) {}
+          setTimeout(() => {
+            if (!dev) return;
+            device = dev;
+            openConnection().catch(() => {
+              log('Reconnect failed — tap Connect to retry.', 'err');
+              setConnectedUI(false);
+            });
+          }, 1000);
+          return;
+        }
+      }
+      pollBusy = false;
+    }
+    await sleep(200);
+  }
 }
-function schedulePoll() { if (connected) setTimeout(pollLoop, 200); }
+
+function startPolling() {
+  pollGen++;
+  pollingLoop(pollGen);
+}
 
 /* --------------------------- Wiring ------------------------------- */
 el('btnConn').addEventListener('click', connect);
