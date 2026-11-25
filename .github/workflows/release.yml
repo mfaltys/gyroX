@@ -35,11 +35,29 @@ jobs:
           sha256sum "gyroX-${VERSION}.bin" > "gyroX-${VERSION}.bin.sha256"
           echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
 
-      - name: Create GitHub Release
+      - name: Create GitHub Release (release object + notes)
         uses: softprops/action-gh-release@v2
         with:
           name: gyroX ${{ env.VERSION }}
           generate_release_notes: true   # auto changelog from commits since last tag
-          files: |
-            gyroX-*.bin
-            gyroX-*.bin.sha256
+          # The .bin is uploaded in the next step: GitHub's large-asset upload
+          # intermittently 500s with "Error creating policy"; the gh CLI does
+          # the correct chunked upload with retries (proven pattern).
+
+      - name: Upload firmware binary (retried — GH asset-upload flakiness)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          n=5
+          for attempt in $(seq 1 "$n"); do
+            if gh release upload "$VERSION" "gyroX-${VERSION}.bin" "gyroX-${VERSION}.bin.sha256" --clobber; then
+              echo "uploaded firmware on attempt $attempt"
+              exit 0
+            fi
+            if [ "$attempt" -lt "$n" ]; then
+              echo "::warning::asset upload attempt $attempt/$n failed; retrying in $((attempt * 20))s…"
+              sleep $((attempt * 20))
+            fi
+          done
+          echo "::error::asset upload failed after $n attempts. Re-run this workflow for the same tag to finish uploading."
+          exit 1
