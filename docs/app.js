@@ -243,14 +243,6 @@ function applyCfg(c) {
   el('mLedsBright').value = (c.leds_bright === undefined ? 100 : c.leds_bright);
   el('vBright').textContent = el('mLedsBright').value;
   el('fDevName').value = c.device_name || '';
-  updateNamePreview();
-}
-
-/* Live preview of the derived names as the user types */
-function updateNamePreview() {
-  const n = el('fDevName').value.trim();
-  el('vBtName').textContent = n || 'gyroX';
-  el('vApName').textContent = n ? 'gyroX-' + n : 'gyroX';
 }
 
 /* Header pill: device name + firmware version (matters with multiple cars) */
@@ -734,7 +726,6 @@ el('btnCal').addEventListener('click', calibrate);
 el('btnResetHead').addEventListener('click', resetHead);
 el('btnOta').addEventListener('click', otaUpload);
 el('btnFlashVersion').addEventListener('click', otaUpload);
-el('fDevName').addEventListener('input', updateNamePreview);
 el('otaVersion').addEventListener('change', updateOtaStatus);
 el('btnRollback').addEventListener('click', rollbackNow);
 
