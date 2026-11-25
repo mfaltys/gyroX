@@ -261,6 +261,20 @@ async function saveDeviceName() {
   }
 }
 
+/* DLPF / gyro range apply the moment they change: set_config applies and
+ * saves on the device immediately - no Save-button trip needed. */
+async function saveAdvField(field, sel, label) {
+  if (!connected || otaBusy) return;
+  const txt = sel.selectedOptions[0] ? sel.selectedOptions[0].text : sel.value;
+  try {
+    const r = await sendCommand({ cmd: 'set_config', [field]: Number(sel.value) });
+    if (!r.ok) throw new Error(r.error || 'save failed');
+    log(label + ' set to ' + txt + ' (saved)', 'ok');
+  } catch (e) {
+    log(label + ' save failed: ' + e.message, 'err');
+  }
+}
+
 /* Header pill: device name + firmware version (matters with multiple cars) */
 function updatePill() {
   const n = el('fDevName').value.trim() || 'gyroX';
@@ -743,6 +757,8 @@ el('btnFlashVersion').addEventListener('click', otaUpload);
 el('btnSaveName').addEventListener('click', saveDeviceName);
 el('otaVersion').addEventListener('change', updateOtaStatus);
 el('btnRollback').addEventListener('click', rollbackNow);
+el('mDlpf').addEventListener('change', (e) => saveAdvField('gyro_dlpf', e.target, 'Gyro filter'));
+el('mFs').addEventListener('change', (e) => saveAdvField('gyro_fs', e.target, 'Gyro range'));
 
 /* ---------------------------- Init -------------------------------- */
 setConnectedUI(false);

@@ -140,7 +140,6 @@
         <label>Gyro zero offset (°/s)</label>
         <span id="mGzoff" class="value">-</span>
       </div>
-      <div class="msg">Applied on Save - no reboot needed.</div>
 
       <div class="sep">Firmware update (OTA)</div>
       <div class="row"><label>Firmware file (.bin)</label><input type="file" id="otaFile" accept=".bin"></div>
@@ -344,6 +343,17 @@ el('btnSaveName').onclick = async () => {
 el('btnLoad').onclick = loadCfg;
 el('btnCal').onclick = calibrate;
 el('btnResetHead').onclick = resetHead;
+/* DLPF / gyro range apply the moment they change (partial POST - no Save trip) */
+async function saveAdvField(key, sel) {
+  try {
+    const r = await post('/api/config', { [key]: Number(sel.value) });
+    if (!r.ok) throw new Error((await r.text()) || 'save failed');
+  } catch (e) {
+    el('mMsg').textContent = 'Save failed: ' + e.message;
+  }
+}
+el('mDlpf').onchange = (e) => saveAdvField('gyro_dlpf', e.target);
+el('mFs').onchange = (e) => saveAdvField('gyro_fs', e.target);
 setInterval(loadState, 200);
 loadCfg();
 loadState();
