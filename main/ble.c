@@ -84,12 +84,18 @@ static uint16_t s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 
 static SemaphoreHandle_t s_ota_mutex;
 
+/* Flow-control: ack every OTA_ACK_SPAN bytes actually written to flash so
+ * the client can pace its write window (WNR streaming without acks outruns
+ * the flash pipeline and the transfer dies at Chrome's op timeout). */
+#define OTA_ACK_SPAN 4096
+
 static struct {
     bool in_progress;
     esp_ota_handle_t ota;
     const esp_partition_t *part;
     int32_t total_size;
     int32_t written_size;
+    int32_t acked_size;
 } s_ota = {0};
 
 /* ------------------------------------------------------------------ */
@@ -165,7 +171,7 @@ static int chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
             const esp_app_desc_t *desc = esp_app_get_description();
             char buf[256];
             int n = snprintf(buf, sizeof(buf),
-                             "{\"version\":\"%s\",\"model\":\"gyroX\",\"ble_ver\":1}",
+                             "{\"version\":\"%s\",\"model\":\"gyroX\",\"ble_ver\":2}",
                              desc ? desc->version : "unknown");
             if (n < 0 || n >= (int)sizeof(buf)) n = sizeof(buf) - 1;
             rc = os_mbuf_append(ctxt->om, buf, n);
@@ -274,7 +280,7 @@ static int chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
                 const esp_app_desc_t *desc = esp_app_get_description();
                 char json[256];
                 int n = snprintf(json, sizeof(json),
-                                 "{\"ok\":true,\"version\":\"%s\",\"model\":\"gyroX\",\"ble_ver\":1}",
+                                 "{\"ok\":true,\"version\":\"%s\",\"model\":\"gyroX\",\"ble_ver\":2}",
                                  desc ? desc->version : "unknown");
                 if (n < 0 || n >= (int)sizeof(json)) n = sizeof(json) - 1;
                 notify_json(conn_handle, chr_cfg_handle, json);
@@ -405,6 +411,7 @@ static int chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
                 s_ota.part = update;
                 s_ota.total_size = size;
                 s_ota.written_size = 0;
+                s_ota.acked_size = 0;
                 xSemaphoreGive(s_ota_mutex);
 
                 ESP_LOGI(TAG, "OTA begin: %d bytes -> %s", (int)size, update->label);
@@ -494,7 +501,25 @@ static int chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
 
             xSemaphoreTake(s_ota_mutex, portMAX_DELAY);
             s_ota.written_size = written + (int32_t)len;
+            int32_t now_written = s_ota.written_size;
+            int32_t acked = s_ota.acked_size;
+            int32_t total = s_ota.total_size;
             xSemaphoreGive(s_ota_mutex);
+
+            /* Flow-control ack: report actual flash progress every span, and
+             * always for the final chunk, so the client never gets more than
+             * its window ahead of reality. Deferred through the reply worker
+             * like every other notification. */
+            if (now_written - acked >= OTA_ACK_SPAN || now_written >= total) {
+                char ack[32];
+                int n = snprintf(ack, sizeof(ack), "{\"ota\":%d}", (int)now_written);
+                if (n > 0 && n < (int)sizeof(ack)) {
+                    notify_json(conn_handle, chr_cfg_handle, ack);
+                }
+                xSemaphoreTake(s_ota_mutex, portMAX_DELAY);
+                s_ota.acked_size = now_written;
+                xSemaphoreGive(s_ota_mutex);
+            }
             return 0; /* no response for WRITE_NO_RSP */
         }
 
@@ -646,6 +671,15 @@ static int gap_event_cb(struct ble_gap_event *event, void *arg)
     case BLE_GAP_EVENT_DISCONNECT:
         ESP_LOGI(TAG, "BLE client disconnected");
         s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+        /* Abort an in-flight OTA: a stale handle would block the next
+         * esp_ota_begin until reboot. */
+        xSemaphoreTake(s_ota_mutex, portMAX_DELAY);
+        if (s_ota.in_progress) {
+            esp_ota_abort(s_ota.ota);
+            memset(&s_ota, 0, sizeof(s_ota));
+            ESP_LOGW(TAG, "OTA aborted - client disconnected mid-transfer");
+        }
+        xSemaphoreGive(s_ota_mutex);
         ble_advertise();
         break;
     default:

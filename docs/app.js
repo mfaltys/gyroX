@@ -15,10 +15,17 @@ const CHR_OTAC = '0000a103-0000-1000-8000-00805f9b34fb';
 const CHR_OTAD = '0000a104-0000-1000-8000-00805f9b34fb';
 
 const MTU_CHUNK   = 480;  // OTA data bytes per WRITE (device MTU is 517)
-const CHUNK_DELAY = 15;   // ms between OTA chunks (flow control)
-// Measured over BLE on a real device: 1,248,368 bytes in ~409 s (~3 KB/s).
-// The bottleneck is Chrome's per-write GATT latency, not the radio.
-const OTA_BYTES_PER_SEC = 3000;
+/* Write-with-response baseline measured on a real device: 1,248,368 bytes
+ * in ~409 s (~3 KB/s) - Chrome's per-write GATT latency dominates.
+ * With windowed write-without-response streaming the rate is set by the
+ * device's flash pipeline (~4 KB sector erases), expected ~65-75 s. */
+const OTA_BYTES_PER_SEC = 18000;
+/* Flow control: the device acks every ~4 KB actually written to flash.
+ * Never more than OTA_WINDOW_BYTES of unacked data in flight, else the
+ * backlog grows behind the device and Chrome's ~30 s GATT op timeout
+ * kills the link mid-transfer. */
+const OTA_WINDOW_BYTES = 16384;
+const OTA_ACK_TIMEOUT  = 8000;   // ms to wait for a progress ack
 
 function el(id) { return document.getElementById(id); }
 
@@ -31,6 +38,9 @@ let otaBusy = false;
 let connGen = 0;      // generation token - cancels superseded connect attempts
 let deviceVersion = null;   // firmware version reported by the device
 let releases = [];          // GitHub releases, newest first
+let bleVer = 1;             // device BLE protocol version (2 = acks + WNR OTA)
+let otaSent = 0;            // bytes queued to the radio this OTA
+let otaAcked = 0;           // bytes the device reports actually written
 
 /* ---------------------------- Log --------------------------------- */
 function esc(s) {
@@ -85,6 +95,9 @@ function onChrCfgValue(value) {
   try {
     const obj = JSON.parse(notifyBuf);
     notifyBuf = '';
+    /* OTA flow-control acks arrive between commands - route by shape and
+     * update the counter unconditionally so no ack is ever dropped. */
+    if (obj && typeof obj.ota === 'number') { otaAcked = obj.ota; return; }
     if (notifyResolve) { const r = notifyResolve; notifyResolve = null; r(JSON.stringify(obj)); }
   } catch (e) {
     if (notifyBuf.length > 600) notifyBuf = '';  // runaway-buffer guard
@@ -98,6 +111,7 @@ function setConnectedUI(on) {
   el('btnConn').classList.toggle('disconnect', on);
   if (!on) {
     deviceVersion = null;
+    bleVer = 1;
     el('ver').textContent = 'BLE';
     el('ver').classList.remove('connected');
     el('otaInstalled').textContent = '-';
@@ -171,11 +185,12 @@ async function openConnection() {
   try {
     const info = JSON.parse(new TextDecoder().decode((await chrInfo.readValue()).buffer));
     deviceVersion = info.version || null;
+    bleVer = info.ble_ver || 1;
     if (deviceVersion) {
       el('ver').textContent = 'fw: ' + deviceVersion;
       el('otaInstalled').textContent = deviceVersion;
     }
-    log('Firmware ' + deviceVersion, 'ok');
+    log('Firmware ' + deviceVersion + ' (ble protocol v' + bleVer + ')', 'ok');
   } catch (e) { /* pill stays generic */ }
   await loadCfg();
   /* One-shot health check - a snapshot, not a live feed (see refreshState). */
@@ -541,6 +556,20 @@ el('otaFile').addEventListener('change', () => {
   }
 });
 
+/* Waits until the device reports >= target bytes actually written to flash.
+ * Polls instead of parking a resolver on the notification handler, so an
+ * ack can never be dropped between the handler and a waiter. Throws on
+ * timeout - the caller aborts the OTA. */
+async function waitUntilAcked(target) {
+  const deadline = Date.now() + OTA_ACK_TIMEOUT;
+  while (otaAcked < target) {
+    if (Date.now() > deadline) {
+      throw new Error('Device stopped acking at ' + otaAcked + '/' + target + ' bytes');
+    }
+    await sleep(20);
+  }
+}
+
 async function otaUpload() {
   if (otaBusy) return;
   let bytes, label;
@@ -599,17 +628,36 @@ async function otaUpload() {
     await ctrl({ cmd: 'begin', size: bytes.length });
     log('OTA accepted by device', 'ok');
 
+    otaSent = 0;
+    otaAcked = 0;
+    /* ble protocol v2 supports flow-controlled write-without-response
+     * streaming (fast). v1 devices get write-with-response, which self-
+     * paces to the device via the ATT response and cannot be outrun. */
+    const useWnr = bleVer >= 2;
+    log('Streaming via ' + (useWnr ? 'windowed write-without-response' : 'write-with-response'));
+
     for (let off = 0; off < bytes.length; off += MTU_CHUNK) {
       const end = Math.min(off + MTU_CHUNK, bytes.length);
-      /* Write-without-response: no ATT response to wait for, which removes
-       * the dominant per-chunk cost (Chrome's write-response round trip).
-       * The CHUNK_DELAY sleep below is the flow-control mechanism that
-       * keeps us from outrunning the device's flash writes. */
-      await chrOtad.writeValueWithoutResponse(bytes.slice(off, end));
+      if (useWnr && end - otaAcked > OTA_WINDOW_BYTES) {
+        /* Device flash pipeline is behind - hold until it drains back
+         * inside the window, or abort on timeout. */
+        await waitUntilAcked(end - OTA_WINDOW_BYTES);
+      }
+      if (useWnr) {
+        await chrOtad.writeValueWithoutResponse(bytes.slice(off, end));
+      } else {
+        await chrOtad.writeValue(bytes.slice(off, end));
+      }
+      otaSent = end;
       const pct = Math.round((end / bytes.length) * 100);
       el('otaBar').style.width = pct + '%';
       el('otaMsg').textContent = 'Flashing ' + pct + '% - do not power off!';
-      if (end < bytes.length) await new Promise(r => setTimeout(r, CHUNK_DELAY));
+    }
+    if (useWnr) {
+      /* Every byte must actually be written to flash before finalizing:
+       * otherwise `complete` queues behind the drain and Chrome's ~30 s
+       * op timeout kills the link before the device can finalize. */
+      await waitUntilAcked(bytes.length);
     }
     log('OTA stream complete, finalizing…');
 
