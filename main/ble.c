@@ -321,6 +321,7 @@ static int chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
                 cJSON_AddNumberToObject(r, "output", m->output);
                 cJSON_AddBoolToObject(r, "rx_valid", m->rx_valid);
                 cJSON_AddBoolToObject(r, "gyro_ready", m->gyro_ready);
+                cJSON_AddBoolToObject(r, "gyro_on", m->gyro_on);
                 char *json = cJSON_PrintUnformatted(r);
                 if (json) {
                     notify_json(conn_handle, chr_cfg_handle, json);

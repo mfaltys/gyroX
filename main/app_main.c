@@ -3,10 +3,12 @@
  * Sits between an ELRS PWM receiver and the steering servo:
  *   RX PWM -> gyro correction -> servo PWM
  *
- * Boot button (GPIO 9 on XIAO ESP32C3) - hold ~3 s AFTER power-up:
- *   Held 3 s after boot -> Wi-Fi AP + web UI for configuring gyro settings
- *   Not held            -> drive mode, no Wi-Fi at all
- *   The AP is gone again after a power cycle unless the button is held again.
+ * Boot button (GPIO 9 on XIAO ESP32C3) while driving:
+ *   Short tap -> toggle gyro correction off/on (it always starts ON)
+ *   Hold ~3 s -> Wi-Fi AP + web UI for configuring gyro settings (one-shot;
+ *                gone again after a power cycle unless held again)
+ * A quick servo tweak plays as a physical cue when the AP comes up ("you can
+ * release the button") and when the gyro is switched back on.
  *
  * GPIO 9 is a strapping pin: holding it AT power-up/reset puts the chip into
  * ROM download mode (that is the flash gesture), so the button can only be
@@ -31,28 +33,44 @@
 static const char *TAG = "GYROX";
 static volatile bool s_web_started = false;
 
-/* Web UI entry: the XIAO boot button pulls GPIO 9 to GND. GPIO 9 is a
+/* Boot button: the XIAO boot button pulls GPIO 9 to GND. GPIO 9 is a
  * strapping pin (low at reset = ROM download mode), so it is only sampled
- * AFTER the app is running: a continuous hold of WEB_BTN_HOLD_MS starts the
- * AP + web UI. Drive mode is never delayed - the mixer keeps running while
- * the button is watched, and the hold may happen at any time after boot. */
+ * AFTER the app is running:
+ *   - a press shorter than WEB_BTN_HOLD_MS (and at least WEB_BTN_TAP_MIN_MS,
+ *     bounce filtering) toggles gyro correction on/off;
+ *   - a continuous hold of WEB_BTN_HOLD_MS starts the AP + web UI and plays
+ *     the confirmation tweak so the user knows they can release.
+ * Drive mode is never delayed - the mixer keeps running while the button is
+ * watched, and the hold may happen at any time after boot. */
 static void button_task(void *arg)
 {
     (void)arg;
     uint32_t held_ms = 0;
+    bool was_down = false;
 
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(WEB_BTN_POLL_MS));
-        held_ms = (gpio_get_level(GPIO_BOOT_BTN) == 0)
-                      ? held_ms + WEB_BTN_POLL_MS
-                      : 0;
+        bool down = (gpio_get_level(GPIO_BOOT_BTN) == 0);
 
-        if (held_ms >= WEB_BTN_HOLD_MS && !s_web_started) {
-            s_web_started = true;
-            ESP_LOGI(TAG, "Boot button held %d ms - starting web UI", (int)WEB_BTN_HOLD_MS);
-            web_start();
-            ESP_LOGI(TAG, "Web UI mode active");
-            vTaskDelete(NULL);   /* one-shot: AP stays up until power cycle */
+        if (down) {
+            held_ms += WEB_BTN_POLL_MS;
+            if (held_ms >= WEB_BTN_HOLD_MS && !s_web_started) {
+                s_web_started = true;
+                ESP_LOGI(TAG, "Boot button held %d ms - starting web UI", (int)WEB_BTN_HOLD_MS);
+                web_start();
+                /* Physical cue: AP is up, the button can be released. */
+                mixing_tweak(false);
+                ESP_LOGI(TAG, "Web UI mode active - you can release the button");
+                vTaskDelete(NULL);   /* one-shot: AP stays up until power cycle */
+            }
+            was_down = true;
+        } else if (was_down) {
+            was_down = false;
+            if (held_ms >= WEB_BTN_TAP_MIN_MS && held_ms < WEB_BTN_HOLD_MS) {
+                bool on = !mixing_get_state()->gyro_on;
+                mixing_set_gyro(on);
+            }
+            held_ms = 0;
         }
     }
 }

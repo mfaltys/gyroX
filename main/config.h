@@ -65,6 +65,7 @@
 
 /* ------------------- Web UI (AP mode) ------------------- */
 #define WEB_BTN_HOLD_MS   3000      /* hold BOOT button this long after boot  */
+#define WEB_BTN_TAP_MIN_MS 40      /* shorter press than this = bounce, ignore */
 #define WEB_BTN_POLL_MS   20        /* button task sampling period            */
 #define WEB_AP_SSID       "gyroX"   /* base name: AP = gyroX-<dev>, BLE = <dev> */
 #define WEB_AP_PASSWORD   ""        /* open AP                                   */

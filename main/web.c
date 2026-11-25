@@ -314,6 +314,7 @@ static esp_err_t state_get_handler(httpd_req_t *req)
     cJSON_AddNumberToObject(r, "output", m->output);
     cJSON_AddBoolToObject(r, "rx_valid", m->rx_valid);
     cJSON_AddBoolToObject(r, "gyro_ready", m->gyro_ready);
+    cJSON_AddBoolToObject(r, "gyro_on", m->gyro_on);
     cJSON_AddNumberToObject(r, "gyro_mode", s_cfg.gyro_mode);
     cJSON_AddNumberToObject(r, "gyro_gain", s_cfg.gyro_gain);
     cJSON_AddNumberToObject(r, "gyro_reverse", s_cfg.gyro_reverse);
