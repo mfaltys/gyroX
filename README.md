@@ -10,6 +10,19 @@ again after a power cycle.
 
 Firmware targets **ESP-IDF 6.0.1** (ESP-IDF 5.x works too).
 
+## Releasing a new version
+
+Tag with semver (patch = fix, minor = feature, major = breaking):
+
+```
+git tag -a v1.0.2 -m "v1.0.2"
+git push origin main v1.0.2
+```
+
+The tag push triggers CI (~10 min): it builds the firmware, attaches `app.bin` to a
+GitHub Release and uploads it to S3. Update from the phone via the web UI
+(Firmware tab) or flash over USB. Published tags are immutable - never re-point one.
+
 ```
 Receiver (PWM) ──┐
                  ├─ XIAO ESP32C3 ──► Servo
