@@ -251,7 +251,10 @@ esp_err_t config_set_from_json(cJSON *root)
         if (s_cfg.leds_color != (uint32_t)val) { s_cfg.leds_color = (uint32_t)val; changed = true; }
     }
 
-    item = cJSON_GetObjectItem(root, CFG_DEVICE_NAME);
+    /* NOTE: the JSON/API field is "device_name" (what both web pages send and
+     * what get_config returns); CFG_DEVICE_NAME is the NVS key ("dev_name") -
+     * they are deliberately different strings. */
+    item = cJSON_GetObjectItem(root, "device_name");
     if (item && cJSON_IsString(item)) {
         /* Sanitize: strip control chars, trim spaces, cap at 20 chars so the
          * derived AP SSID (gyroX-<name>) stays within the 32-char limit. */
