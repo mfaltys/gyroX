@@ -121,6 +121,27 @@ input:checked + .sl:after { transform: translateX(20px); }
 .ota-box.update #otaState { color: #ff9b9b; }
 .small a { color: var(--accent); }
 
+/* OTA status box: green when up to date, red when an update is available */
+.ota-box { border: 1px solid var(--border); border-radius: 10px; padding: 4px 8px; margin: 10px 0; }
+.ota-box .row { margin: 4px 0; padding: 4px 2px; }
+.ota-box .row:hover { background: transparent; }   /* display-only rows: not clickable */
+.ota-box.ok { border-color: #22c55e; }
+.ota-box.ok #otaState { color: #7ee2a8; }
+.ota-box.update { border-color: #ef4444; }
+.ota-box.update #otaState { color: #ff9b9b; }
+.small a { color: var(--accent); }
+
+/* compact buttons for the advanced OTA rows */
+.ver-line, .rb-line { display: flex; align-items: center; gap: 8px; flex: 1; justify-content: flex-end; }
+.btn-mini { padding: 6px 12px; font-size: 12px; font-weight: 600; border-radius: 8px; background: #1d2b3f; border: 1px solid var(--border); color: var(--text); cursor: pointer; white-space: nowrap; }
+.btn-mini:hover:not(:disabled) { background: #24364c; }
+.btn-mini:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* disconnected: dim + lock everything below the header */
+.shell > :not(.bar) { transition: opacity 0.2s ease; }
+.shell.off > :not(.bar) { opacity: 0.45; pointer-events: none; user-select: none; }
+
+
 /* OTA rows */
 .value { font-size: 13px; font-weight: 600; color: var(--text); text-align: right; word-break: break-all; }
 .btn-full.ota-update { background: var(--accent); color: #002233; border-color: var(--accent); font-weight: 700; text-align: center; }

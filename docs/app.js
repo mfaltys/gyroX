@@ -107,6 +107,7 @@ function onChrCfgValue(value) {
 /* ---------------------- Connect / disconnect ---------------------- */
 function setConnectedUI(on) {
   connected = on;
+  document.getElementById('shell').classList.toggle('off', !on);
   el('btnConn').textContent = on ? 'Disconnect' : 'Connect';
   el('btnConn').classList.toggle('disconnect', on);
   if (!on) {
@@ -187,7 +188,7 @@ async function openConnection() {
     deviceVersion = info.version || null;
     bleVer = info.ble_ver || 1;
     if (deviceVersion) {
-      el('ver').textContent = 'fw: ' + deviceVersion;
+      el('ver').textContent = deviceVersion;
       el('otaInstalled').textContent = deviceVersion;
     }
     log('Firmware ' + deviceVersion + ' (ble protocol v' + bleVer + ')', 'ok');
@@ -409,10 +410,13 @@ function cmpSemver(a, b) {
   return 0;
 }
 
-async function fetchReleases() {
+async function fetchReleases(force) {
   let cached = null;
   try { cached = JSON.parse(localStorage.getItem('gyroX_releases') || 'null'); } catch (e) { /* ignore */ }
-  if (cached && Date.now() - cached.t < 10 * 60 * 1000) return cached.list;
+  /* cache is only a fallback: force a fresh fetch at every connect so a
+   * newly published release shows up right away (localStorage survives
+   * hard refreshes, which is why a TTL alone is not enough) */
+  if (!force && cached && Date.now() - cached.t < 60 * 1000) return cached.list;
   const res = await fetch('https://api.github.com/repos/' + REPO + '/releases?per_page=20',
                           { headers: { Accept: 'application/vnd.github+json' } });
   if (!res.ok) throw new Error('GitHub API ' + res.status);
@@ -438,12 +442,20 @@ async function fetchReleases() {
 async function loadOtaVersions() {
   const sel = el('otaVersion');
   try {
-    releases = await fetchReleases();
+    releases = await fetchReleases(true);   // fresh fetch at every connect
   } catch (e) {
-    sel.innerHTML = '<option>Release list unavailable</option>';
-    log('Release list failed: ' + e.message, 'err');
-    updateOtaStatus();
-    return;
+    /* GitHub unreachable or rate-limited: fall back to the cached list so
+     * the page still works offline. */
+    try { releases = (JSON.parse(localStorage.getItem('gyroX_releases') || 'null') || {}).list || []; }
+    catch (err) { releases = []; }
+    if (releases.length) {
+      log('GitHub unreachable - using cached release list', 'err');
+    } else {
+      sel.innerHTML = '<option>Release list unavailable</option>';
+      log('Release list failed: ' + e.message, 'err');
+      updateOtaStatus();
+      return;
+    }
   }
   if (!releases.length) {
     sel.innerHTML = '<option>No releases published yet</option>';
@@ -466,46 +478,62 @@ function updateOtaStatus() {
   const box = el('otaBox');
   const latest = releases[0];
   el('otaLatest').textContent = latest ? latest.tag : '-';
-  btn.disabled = !connected || !latest;
+
+  const localFile = el('otaFile').files[0];
+  const sel = releases[Number(el('otaVersion').value || 0)];
+
+  /* Force-flash button in the advanced section: works for any selected
+   * version, including a re-flash of the installed one. */
+  el('btnFlashVersion').disabled = !connected || !sel;
 
   if (!connected) {
     box.className = 'ota-box';
     el('otaState').textContent = 'Connect to check for updates.';
+    btn.style.display = 'none';
     return;
   }
-  if (!latest) {
+  if (!latest || !sel) {
     box.className = 'ota-box';
     el('otaState').textContent = 'No releases published yet.';
+    btn.style.display = 'none';
     return;
   }
 
-  /* Selected version (dropdown defaults to latest) */
-  const r = releases[Number(el('otaVersion').value || 0)];
   const dev = parseSemver(deviceVersion);
-  const rel = parseSemver(r.tag);
+  const rel = parseSemver(sel.tag);
   box.classList.remove('ok', 'update');
-  if (dev && rel) {
+  let actionable = false;
+  if (localFile) {
+    btn.textContent = 'Flash local file: ' + localFile.name;
+    actionable = true;
+  } else if (dev && rel) {
     const c = cmpSemver(rel, dev);
     if (c > 0) {
       box.classList.add('update');
-      el('otaState').textContent = 'Update available - ' + r.tag;
-      btn.textContent = 'Update to ' + r.tag;
+      el('otaState').textContent = 'Update available - ' + sel.tag;
+      btn.textContent = 'Update to ' + sel.tag;
+      actionable = true;
     } else if (c === 0) {
       box.classList.add('ok');
-      el('otaState').textContent = deviceVersion === r.tag ? 'Up to date' : 'Up to date (dev build of ' + r.tag + ')';
-      btn.textContent = 'Re-flash ' + r.tag;
+      el('otaState').textContent = deviceVersion === sel.tag ? 'Up to date' : 'Up to date (dev build of ' + sel.tag + ')';
+      /* a force re-flash lives in the advanced section (Flash Version) */
+      btn.textContent = 'Up to date';
     } else {
       box.classList.add('update');
       el('otaState').textContent = 'Selected version is older than installed';
-      btn.textContent = 'Downgrade to ' + r.tag;
+      btn.textContent = 'Downgrade to ' + sel.tag;
+      actionable = true;
     }
   } else {
     box.classList.add('update');
     el('otaState').textContent = 'Installed version unknown - update recommended';
-    btn.textContent = 'Flash ' + r.tag;
+    btn.textContent = 'Flash ' + sel.tag;
+    actionable = true;
   }
-  el('otaMin').textContent = String(Math.max(1, Math.round(r.size / OTA_BYTES_PER_SEC / 60)));
-  el('otaDl').href = FIRMWARE_BASE_URL + '/' + r.tag + '/app.bin';
+  btn.style.display = actionable ? '' : 'none';
+  btn.disabled = !connected || !actionable;
+  el('otaMin').textContent = String(Math.max(1, Math.round(sel.size / OTA_BYTES_PER_SEC / 60)));
+  el('otaDl').href = FIRMWARE_BASE_URL + '/' + sel.tag + '/app.bin';
 }
 
 async function downloadFirmware(rel) {
@@ -527,7 +555,8 @@ async function verifySha256(bytes, rel) {
 async function getSlots() {
   try {
     const s = await sendCommand({ cmd: 'get_slots' }, 2000);
-    el('otaOther').textContent = s.other || 'empty';
+    el('otaOther').textContent = s.other || 'none';
+    el('btnRollback').textContent = s.other ? 'Flash ' + s.other : 'Flash';
     el('btnRollback').disabled = !connected || !s.other;
   } catch (e) {
     el('otaOther').textContent = 'unknown';
@@ -536,25 +565,17 @@ async function getSlots() {
 
 async function rollbackNow() {
   if (!connected) return;
-  if (!confirm('Roll back to the firmware in the other slot? The device will reboot into it.')) return;
+  const other = el('otaOther').textContent;
+  if (!confirm('Roll back to ' + other + '? The device reboots into the firmware already stored in the other slot - nothing is downloaded.')) return;
   el('btnRollback').disabled = true;
   try { await sendCommand({ cmd: 'rollback' }, 3000); }
   catch (e) { /* the reboot races the ack - expected */ }
-  el('otaMsg').textContent = 'Rollback requested - device rebooting into previous firmware…';
+  el('otaMsg').textContent = 'Rollback requested - device rebooting into ' + other;
   log('Rollback requested', 'ok');
 }
 
 /* ------------------------ OTA over BLE ---------------------------- */
-el('otaFile').addEventListener('change', () => {
-  const f = el('otaFile').files[0];
-  if (f) {
-    el('btnOta').textContent = 'Flash local file: ' + f.name;
-    el('btnOta').disabled = !connected;
-  } else {
-    el('btnOta').textContent = 'Update & flash over BLE';
-    updateOtaStatus();
-  }
-});
+el('otaFile').addEventListener('change', updateOtaStatus);
 
 /* Waits until the device reports >= target bytes actually written to flash.
  * Polls instead of parking a resolver on the notification handler, so an
@@ -696,6 +717,7 @@ el('btnLoad').addEventListener('click', loadCfg);
 el('btnCal').addEventListener('click', calibrate);
 el('btnResetHead').addEventListener('click', resetHead);
 el('btnOta').addEventListener('click', otaUpload);
+el('btnFlashVersion').addEventListener('click', otaUpload);
 el('otaVersion').addEventListener('change', updateOtaStatus);
 el('btnRollback').addEventListener('click', rollbackNow);
 

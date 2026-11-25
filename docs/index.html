@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div class="shell">
+<div class="shell" id="shell">
   <header class="bar">
     <div class="brand">gyro<span class="dot">X</span></div>
     <div id="ver" class="pill">BLE</div>
@@ -133,8 +133,8 @@
 
       <div class="sep">Firmware update (OTA)</div>
       <div class="ota-box" id="otaBox">
-        <div class="row"><label>Current</label><span id="otaInstalled" class="value">-</span></div>
-        <div class="row"><label>Latest</label><span id="otaLatest" class="value">-</span></div>
+        <div class="row plain"><label>Current</label><span id="otaInstalled" class="value">-</span></div>
+        <div class="row plain"><label>Latest</label><span id="otaLatest" class="value">-</span></div>
         <div id="otaState" class="msg">Connect to check for updates.</div>
       </div>
       <div class="row"><button id="btnOta" class="btn-full" disabled>Update & flash over BLE</button></div>
@@ -147,11 +147,19 @@
         <div class="collapse-content" id="collapse-otamore">
           <div class="row">
             <label>Version</label>
-            <select id="otaVersion"><option>Loading releases…</option></select>
+            <span class="ver-line">
+              <select id="otaVersion"><option>Loading releases…</option></select>
+              <button id="btnFlashVersion" class="btn-mini" disabled>Flash Version</button>
+            </span>
           </div>
-          <div class="row"><label>Other slot</label><span id="otaOther" class="value">-</span></div>
-          <div class="row"><button id="btnRollback" class="btn-full" disabled>Roll back to previous firmware</button></div>
-          <div class="row"><label>Fallback file</label><input type="file" id="otaFile" accept=".bin"></div>
+          <div class="row">
+            <label>Rollback</label>
+            <span class="rb-line">
+              <span id="otaOther" class="value">-</span>
+              <button id="btnRollback" class="btn-mini" disabled>Flash</button>
+            </span>
+          </div>
+          <div class="row"><label>Flash local file</label><input type="file" id="otaFile" accept=".bin"></div>
           <div class="msg">For offline installs - releases normally load from GitHub automatically.</div>
         </div>
       </div>
