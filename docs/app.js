@@ -335,15 +335,15 @@ async function loadCfg() {
 async function calibrate() {
   if (!confirm('Keep the car completely still, then press OK.')) return;
   try {
-    el('mMsg').textContent = 'Calibrating gyro…';
+    el('calMsg').textContent = 'Calibrating gyro…';
     const r = await sendCommand({ cmd: 'calibrate' });
     if (!r.ok) throw new Error(r.error || 'failed');
-    el('mMsg').textContent = 'Calibrated';
+    el('calMsg').textContent = 'Calibrated';
     loadCfg();
-    setTimeout(() => { el('mMsg').textContent = ''; }, 1500);
+    setTimeout(() => { el('calMsg').textContent = ''; }, 1500);
     log('Gyro calibrated', 'ok');
   } catch (e) {
-    el('mMsg').textContent = 'Calibration failed: ' + e.message;
+    el('calMsg').textContent = 'Calibration failed: ' + e.message;
     log('Calibration failed: ' + e.message, 'err');
   }
 }

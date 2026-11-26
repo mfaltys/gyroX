@@ -108,9 +108,10 @@ colors, or feed the rail from an external supply (common ground still required).
    - The XIAO starts an open AP: SSID `gyroX`, address `192.168.4.1`.
    - Connect your phone/laptop, open `http://192.168.4.1/`.
    - Pick a tuning profile (General / Drift / Bashing / Custom), adjust gyro
-     gain/mode/reversing, steering deadband/trim, servo limits, the advanced sensor
-     settings, calibrate the gyro, reset the heading-hold target, control the LED
-     rail, and click **Save** (writes NVS).
+     gain/mode/reversing, steering deadband/trim, servo limits, reset the
+     heading-hold target, control the LED rail, and click **Save** (writes NVS).
+     The Advanced tab holds the sensor settings, the gyro calibration button
+     (under the zero-offset readout), and firmware updates.
    - The mixer keeps running the whole time - you can tune the car live.
    - **Power cycle the car** → AP comes back up only if you hold the boot button again.
 

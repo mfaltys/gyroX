@@ -86,7 +86,6 @@
       </div>
 
       <div class="row act">
-        <button id="btnCal" class="btn-full">Calibrate gyro (car still!)</button>
         <button id="btnSave" class="btn-full btn-save">Save to device</button>
         <button id="btnLoad" class="btn-full">Reload</button>
       </div>
@@ -145,6 +144,8 @@
         <label>Gyro zero offset (°/s)</label>
         <span id="mGzoff" class="value">-</span>
       </div>
+      <div class="row"><button id="btnCal" class="btn-full">Calibrate gyro (car still!)</button></div>
+      <div id="calMsg" class="msg"></div>
 
       <div class="sep">Firmware update (OTA)</div>
       <div class="row"><label>Firmware file (.bin)</label><input type="file" id="otaFile" accept=".bin"></div>
@@ -220,13 +221,13 @@ function saveCfg(){
 }
 function calibrate(){
   if (!confirm('Keep the car completely still, then press OK.')) return;
-  el('mMsg').textContent = 'Calibrating gyro…';
+  el('calMsg').textContent = 'Calibrating gyro…';
   post('/api/calibrate').then(async r => {
     if (!r.ok) throw new Error('calibration failed');
-    el('mMsg').textContent = 'Calibrated';
+    el('calMsg').textContent = 'Calibrated';
     loadCfg();
-    setTimeout(() => { el('mMsg').textContent = ''; }, 1500);
-  }).catch(e => { el('mMsg').textContent = 'Calibration failed: ' + e.message; });
+    setTimeout(() => { el('calMsg').textContent = ''; }, 1500);
+  }).catch(e => { el('calMsg').textContent = 'Calibration failed: ' + e.message; });
 }
 function resetHead(){
   post('/api/reset_heading').then(() => {
