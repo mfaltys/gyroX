@@ -47,7 +47,9 @@
       </div>
       <div class="row">
         <label>Gain</label>
+        <button id="btnGainDn" class="step-btn" title="Gain down" aria-label="Gain down">▼</button>
         <input type="range" id="mGain" min="0" max="200">
+        <button id="btnGainUp" class="step-btn" title="Gain up" aria-label="Gain up">▲</button>
         <span id="vGain" class="vnum">8.0</span><span class="vunit">%</span>
       </div>
       <div class="row">
@@ -65,14 +67,16 @@
           </div>
           <div class="row">
             <label>Deadband</label>
+            <button id="btnDeadDn" class="step-btn" title="Deadband down" aria-label="Deadband down">▼</button>
             <input type="range" id="mDeadband" min="0" max="50">
+            <button id="btnDeadUp" class="step-btn" title="Deadband up" aria-label="Deadband up">▲</button>
             <span id="vDeadband" class="vnum">8</span><span class="vunit">%</span>
           </div>
           <div class="row">
             <label>Trim</label>
-            <button id="btnTrimDn" class="step-btn" title="Trim down (saves immediately)" aria-label="Trim down">▼</button>
+            <button id="btnTrimDn" class="step-btn" title="Trim down" aria-label="Trim down">▼</button>
             <input type="range" id="mTrim" min="-100" max="100">
-            <button id="btnTrimUp" class="step-btn" title="Trim up (saves immediately)" aria-label="Trim up">▲</button>
+            <button id="btnTrimUp" class="step-btn" title="Trim up" aria-label="Trim up">▲</button>
             <span id="vTrim" class="vnum">0</span><span class="vunit">%</span>
           </div>
         </div>
@@ -105,7 +109,9 @@
       </div>
       <div class="row">
         <label>Brightness</label>
+        <button id="btnBrightDn" class="step-btn" title="Brightness down" aria-label="Brightness down">▼</button>
         <input type="range" id="mLedsBright" min="0" max="100">
+        <button id="btnBrightUp" class="step-btn" title="Brightness up" aria-label="Brightness up">▲</button>
         <span id="vBright" class="vnum">100</span><span class="vunit">%</span>
       </div>
     </section>
@@ -171,6 +177,13 @@ function post(path, body){
   return fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
 }
 function get(path){ return fetch(path).then(r => r.json()); }
+/* Shorten a git-describe version for the header pill so it can't stretch the
+ * top bar: "v1.2.3-14-g6ef7187-dirty" -> "1.2.3-14". */
+function shortVer(v) {
+  if (!v) return '?';
+  v = String(v).replace(/^v/, '').replace(/-g[0-9a-fA-F]+.*$/, '');
+  return v.length > 12 ? v.slice(0, 12) + '…' : v;
+}
 function applyCfg(c){
   el('mMode').value = c.gyro_mode;
   el('mGain').value = c.gyro_gain; el('vGain').textContent = (c.gyro_gain / 10).toFixed(1);
@@ -249,7 +262,7 @@ function loadState(){
                                (s.gyro_on ? '' : '  ·  OFF');
   }).catch(() => {});
 }
-get('/api/version').then(r => { if (r.version) el('ver').textContent = 'fw: ' + r.version; });
+get('/api/version').then(r => { if (r.version) el('ver').textContent = 'fw: ' + shortVer(r.version); });
 ['mGain', 'mDeadband', 'mTrim'].forEach(id => {
   el(id).addEventListener('input', () => {
     const d = id === 'mGain' ? 'vGain' : id === 'mDeadband' ? 'vDeadband' : 'vTrim';
@@ -290,32 +303,20 @@ el('mMode').addEventListener('change', () => {
   flipToCustom();
 });
 
-/* Trim fine-tune: arrows bump ±1, apply + save immediately - the mixer runs
- * live, so the servo steps on every tap. The slider stays for gross
- * adjustments. Rapid taps coalesce into one in-flight POST (one NVS write). */
-let trimPending = null, trimSending = false;
-async function flushTrim() {
-  if (trimSending || trimPending === null) return;
-  trimSending = true;
-  const v = trimPending; trimPending = null;
-  try {
-    const r = await post('/api/config', { steer_trim: v, profile: 3 });
-    if (!r.ok) throw new Error((await r.text()) || 'save failed');
-  } catch (e) {
-    el('mMsg').textContent = 'Trim save failed: ' + e.message;
-  }
-  trimSending = false;
-  flushTrim();
-}
-function bumpTrim(delta) {
-  const cur = Number(el('mTrim').value);
-  const next = Math.max(-100, Math.min(100, cur + delta));
-  if (next === cur) return;
-  el('mTrim').value = next;
-  el('vTrim').textContent = next;
-  flipToCustom();
-  trimPending = next;
-  flushTrim();
+/* Slider steppers: the ▼/▲ buttons move a slider by ±1 by setting the value
+ * and re-firing the slider's own input/change events, so every existing
+ * behavior applies exactly as if the slider had been moved by hand - the
+ * value label updates, drive sliders flip the profile to Custom, and the
+ * LED controls save on change (their existing listeners). No save logic
+ * lives here: gain/deadband/trim batch until the Save button, like the
+ * sliders themselves. */
+function bumpSlider(id, delta) {
+  const s = el(id);
+  const next = Math.max(Number(s.min), Math.min(Number(s.max), Number(s.value) + delta));
+  if (next === Number(s.value)) return;
+  s.value = next;
+  s.dispatchEvent(new Event('input', { bubbles: true }));
+  s.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
 /* collapsible sections (Steering / Servo) - start collapsed */
@@ -381,8 +382,14 @@ el('btnSaveName').onclick = async () => {
 el('btnLoad').onclick = loadCfg;
 el('btnCal').onclick = calibrate;
 el('btnResetHead').onclick = resetHead;
-el('btnTrimDn').onclick = () => bumpTrim(-1);
-el('btnTrimUp').onclick = () => bumpTrim(1);
+el('btnGainDn').onclick = () => bumpSlider('mGain', -1);
+el('btnGainUp').onclick = () => bumpSlider('mGain', 1);
+el('btnDeadDn').onclick = () => bumpSlider('mDeadband', -1);
+el('btnDeadUp').onclick = () => bumpSlider('mDeadband', 1);
+el('btnTrimDn').onclick = () => bumpSlider('mTrim', -1);
+el('btnTrimUp').onclick = () => bumpSlider('mTrim', 1);
+el('btnBrightDn').onclick = () => bumpSlider('mLedsBright', -1);
+el('btnBrightUp').onclick = () => bumpSlider('mLedsBright', 1);
 /* DLPF / gyro range apply the moment they change (partial POST - no Save trip) */
 async function saveAdvField(key, sel) {
   try {

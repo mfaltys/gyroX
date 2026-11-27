@@ -48,7 +48,9 @@
       </div>
       <div class="row">
         <label>Gain</label>
+        <button id="btnGainDn" class="step-btn" title="Gain down" aria-label="Gain down">▼</button>
         <input type="range" id="mGain" min="0" max="200">
+        <button id="btnGainUp" class="step-btn" title="Gain up" aria-label="Gain up">▲</button>
         <span id="vGain" class="vnum">8.0</span><span class="vunit">%</span>
       </div>
       <div class="row">
@@ -66,14 +68,16 @@
           </div>
           <div class="row">
             <label>Deadband</label>
+            <button id="btnDeadDn" class="step-btn" title="Deadband down" aria-label="Deadband down">▼</button>
             <input type="range" id="mDeadband" min="0" max="50">
+            <button id="btnDeadUp" class="step-btn" title="Deadband up" aria-label="Deadband up">▲</button>
             <span id="vDeadband" class="vnum">8</span><span class="vunit">%</span>
           </div>
           <div class="row">
             <label>Trim</label>
-            <button id="btnTrimDn" class="step-btn" title="Trim down (saves immediately)" aria-label="Trim down">▼</button>
+            <button id="btnTrimDn" class="step-btn" title="Trim down" aria-label="Trim down">▼</button>
             <input type="range" id="mTrim" min="-100" max="100">
-            <button id="btnTrimUp" class="step-btn" title="Trim up (saves immediately)" aria-label="Trim up">▲</button>
+            <button id="btnTrimUp" class="step-btn" title="Trim up" aria-label="Trim up">▲</button>
             <span id="vTrim" class="vnum">0</span><span class="vunit">%</span>
           </div>
         </div>
@@ -107,7 +111,9 @@
       </div>
       <div class="row">
         <label>Brightness</label>
+        <button id="btnBrightDn" class="step-btn" title="Brightness down" aria-label="Brightness down">▼</button>
         <input type="range" id="mLedsBright" min="0" max="100">
+        <button id="btnBrightUp" class="step-btn" title="Brightness up" aria-label="Brightness up">▲</button>
         <span id="vBright" class="vnum">100</span><span class="vunit">%</span>
       </div>
     </section>

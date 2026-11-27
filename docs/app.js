@@ -122,6 +122,12 @@ function setConnectedUI(on) {
   el('btnLoad').disabled = !on;
   el('btnTrimDn').disabled = !on;
   el('btnTrimUp').disabled = !on;
+  el('btnGainDn').disabled = !on;
+  el('btnGainUp').disabled = !on;
+  el('btnDeadDn').disabled = !on;
+  el('btnDeadUp').disabled = !on;
+  el('btnBrightDn').disabled = !on;
+  el('btnBrightUp').disabled = !on;
   el('btnRollback').disabled = !on;
   el('btnSaveName').disabled = !on;
   /* The gyro switch only appears once there is something to control. */
@@ -194,7 +200,7 @@ async function openConnection() {
     deviceVersion = info.version || null;
     bleVer = info.ble_ver || 1;
     if (deviceVersion) {
-      el('ver').textContent = deviceVersion;
+      el('ver').textContent = shortVer(deviceVersion);
       el('otaInstalled').textContent = deviceVersion;
     }
     log('Firmware ' + deviceVersion + ' (ble protocol v' + bleVer + ')', 'ok');
@@ -281,10 +287,18 @@ async function saveAdvField(field, sel, label) {
   }
 }
 
+/* Shorten a git-describe version for the header pill so a long name+version
+ * pair can't stretch the top bar: "v1.2.3-14-g6ef7187-dirty" -> "1.2.3-14". */
+function shortVer(v) {
+  if (!v) return '?';
+  v = String(v).replace(/^v/, '').replace(/-g[0-9a-fA-F]+.*$/, '');
+  return v.length > 12 ? v.slice(0, 12) + '…' : v;
+}
+
 /* Header pill: device name + firmware version (matters with multiple cars) */
 function updatePill() {
   const n = el('fDevName').value.trim() || 'gyroX';
-  el('ver').textContent = n + ' · ' + (deviceVersion || '?');
+  el('ver').textContent = n + ' · ' + shortVer(deviceVersion);
 }
 
 function collectCfg() {
@@ -359,34 +373,20 @@ async function resetHead() {
   } catch (e) { log('Reset heading failed: ' + e.message, 'err'); }
 }
 
-/* Trim fine-tune: the arrows bump ±1 and save immediately - the device
- * applies trim live, so the servo steps on every tap. The slider stays for
- * gross adjustments (batched until Save). Rapid taps coalesce into a single
- * in-flight write that always carries the latest value (one NVS write). */
-let trimPending = null, trimSending = false;
-async function flushTrim() {
-  if (trimSending || trimPending === null) return;
-  trimSending = true;
-  const v = trimPending; trimPending = null;
-  try {
-    const r = await sendCommand({ cmd: 'set_config', steer_trim: v, profile: 3 });
-    if (!r.ok) throw new Error(r.error || 'save failed');
-  } catch (e) {
-    log('Trim save failed: ' + e.message, 'err');
-  }
-  trimSending = false;
-  flushTrim();
-}
-function bumpTrim(delta) {
-  if (!connected) return;
-  const cur = Number(el('mTrim').value);
-  const next = Math.max(-100, Math.min(100, cur + delta));
-  if (next === cur) return;
-  el('mTrim').value = next;
-  el('vTrim').textContent = next;
-  flipToCustom();
-  trimPending = next;
-  flushTrim();
+/* Slider steppers: the ▼/▲ buttons move a slider by ±1 by setting the value
+ * and re-firing the slider's own input/change events, so every existing
+ * behavior applies exactly as if the slider had been moved by hand - the
+ * value label updates, drive sliders flip the profile to Custom, and the
+ * LED controls save on change (their existing listeners). No save logic
+ * lives here: gain/deadband/trim batch until the Save button, like the
+ * sliders themselves. */
+function bumpSlider(id, delta) {
+  const s = el(id);
+  const next = Math.max(Number(s.min), Math.min(Number(s.max), Number(s.value) + delta));
+  if (next === Number(s.value)) return;
+  s.value = next;
+  s.dispatchEvent(new Event('input', { bubbles: true }));
+  s.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
 /* slider value labels (same as AP page) */
@@ -804,8 +804,14 @@ el('btnSave').addEventListener('click', saveCfg);
 el('btnLoad').addEventListener('click', loadCfg);
 el('btnCal').addEventListener('click', calibrate);
 el('btnResetHead').addEventListener('click', resetHead);
-el('btnTrimDn').addEventListener('click', () => bumpTrim(-1));
-el('btnTrimUp').addEventListener('click', () => bumpTrim(1));
+el('btnGainDn').addEventListener('click', () => bumpSlider('mGain', -1));
+el('btnGainUp').addEventListener('click', () => bumpSlider('mGain', 1));
+el('btnDeadDn').addEventListener('click', () => bumpSlider('mDeadband', -1));
+el('btnDeadUp').addEventListener('click', () => bumpSlider('mDeadband', 1));
+el('btnTrimDn').addEventListener('click', () => bumpSlider('mTrim', -1));
+el('btnTrimUp').addEventListener('click', () => bumpSlider('mTrim', 1));
+el('btnBrightDn').addEventListener('click', () => bumpSlider('mLedsBright', -1));
+el('btnBrightUp').addEventListener('click', () => bumpSlider('mLedsBright', 1));
 el('btnOta').addEventListener('click', otaUpload);
 el('btnFlashVersion').addEventListener('click', otaUpload);
 el('btnSaveName').addEventListener('click', saveDeviceName);

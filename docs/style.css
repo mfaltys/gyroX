@@ -19,7 +19,7 @@ body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-
 .bar { display: flex; align-items: center; gap: 10px; padding: 12px 8px; border-bottom: 1px solid var(--border); }
 .brand { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
 .dot { color: var(--accent); }
-.pill { font-size: 12px; padding: 3px 10px; border-radius: 12px; background: #101c2b; border: 1px solid var(--border); color: var(--muted); margin-left: auto; white-space: nowrap; }
+.pill { font-size: 12px; padding: 3px 10px; border-radius: 12px; background: #101c2b; border: 1px solid var(--border); color: var(--muted); margin-left: auto; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .pill.connected { color: var(--accent); border-color: var(--accent); }
 
 /* connect button (BLE only) */
