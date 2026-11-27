@@ -143,6 +143,11 @@ input:checked + .sl:after { transform: translateX(20px); }
 .btn-mini { padding: 6px 12px; font-size: 12px; font-weight: 600; border-radius: 8px; background: #1d2b3f; border: 1px solid var(--border); color: var(--text); cursor: pointer; white-space: nowrap; }
 .btn-mini:hover:not(:disabled) { background: #24364c; }
 .btn-mini:disabled { opacity: 0.45; cursor: not-allowed; }
+/* trim stepper buttons (±1 per tap, saves immediately) */
+.step-btn { flex: none; width: 32px; height: 30px; padding: 0; font-size: 11px; line-height: 1; border-radius: 8px; background: #1d2b3f; border: 1px solid var(--border); color: var(--text); cursor: pointer; }
+.step-btn:hover:not(:disabled) { background: #24364c; }
+.step-btn:active:not(:disabled) { background: var(--accent); }
+.step-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 /* header gyro switch */
 .gyro-switch { display: flex; align-items: center; gap: 5px; cursor: pointer; user-select: none; }
 .gyro-switch .gs-label { font-size: 11px; font-weight: 700; letter-spacing: 0.5px; color: var(--muted); }

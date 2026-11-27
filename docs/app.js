@@ -120,6 +120,8 @@ function setConnectedUI(on) {
   el('btnSave').disabled = !on;
   el('btnCal').disabled = !on;
   el('btnLoad').disabled = !on;
+  el('btnTrimDn').disabled = !on;
+  el('btnTrimUp').disabled = !on;
   el('btnRollback').disabled = !on;
   el('btnSaveName').disabled = !on;
   /* The gyro switch only appears once there is something to control. */
@@ -355,6 +357,36 @@ async function resetHead() {
     setTimeout(() => { el('mMsg').textContent = ''; }, 1000);
     log('Heading reset', 'ok');
   } catch (e) { log('Reset heading failed: ' + e.message, 'err'); }
+}
+
+/* Trim fine-tune: the arrows bump ±1 and save immediately - the device
+ * applies trim live, so the servo steps on every tap. The slider stays for
+ * gross adjustments (batched until Save). Rapid taps coalesce into a single
+ * in-flight write that always carries the latest value (one NVS write). */
+let trimPending = null, trimSending = false;
+async function flushTrim() {
+  if (trimSending || trimPending === null) return;
+  trimSending = true;
+  const v = trimPending; trimPending = null;
+  try {
+    const r = await sendCommand({ cmd: 'set_config', steer_trim: v, profile: 3 });
+    if (!r.ok) throw new Error(r.error || 'save failed');
+  } catch (e) {
+    log('Trim save failed: ' + e.message, 'err');
+  }
+  trimSending = false;
+  flushTrim();
+}
+function bumpTrim(delta) {
+  if (!connected) return;
+  const cur = Number(el('mTrim').value);
+  const next = Math.max(-100, Math.min(100, cur + delta));
+  if (next === cur) return;
+  el('mTrim').value = next;
+  el('vTrim').textContent = next;
+  flipToCustom();
+  trimPending = next;
+  flushTrim();
 }
 
 /* slider value labels (same as AP page) */
@@ -772,6 +804,8 @@ el('btnSave').addEventListener('click', saveCfg);
 el('btnLoad').addEventListener('click', loadCfg);
 el('btnCal').addEventListener('click', calibrate);
 el('btnResetHead').addEventListener('click', resetHead);
+el('btnTrimDn').addEventListener('click', () => bumpTrim(-1));
+el('btnTrimUp').addEventListener('click', () => bumpTrim(1));
 el('btnOta').addEventListener('click', otaUpload);
 el('btnFlashVersion').addEventListener('click', otaUpload);
 el('btnSaveName').addEventListener('click', saveDeviceName);

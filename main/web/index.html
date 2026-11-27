@@ -70,7 +70,9 @@
           </div>
           <div class="row">
             <label>Trim</label>
+            <button id="btnTrimDn" class="step-btn" title="Trim down (saves immediately)" aria-label="Trim down">▼</button>
             <input type="range" id="mTrim" min="-100" max="100">
+            <button id="btnTrimUp" class="step-btn" title="Trim up (saves immediately)" aria-label="Trim up">▲</button>
             <span id="vTrim" class="vnum">0</span><span class="vunit">%</span>
           </div>
         </div>
@@ -288,6 +290,34 @@ el('mMode').addEventListener('change', () => {
   flipToCustom();
 });
 
+/* Trim fine-tune: arrows bump ±1, apply + save immediately - the mixer runs
+ * live, so the servo steps on every tap. The slider stays for gross
+ * adjustments. Rapid taps coalesce into one in-flight POST (one NVS write). */
+let trimPending = null, trimSending = false;
+async function flushTrim() {
+  if (trimSending || trimPending === null) return;
+  trimSending = true;
+  const v = trimPending; trimPending = null;
+  try {
+    const r = await post('/api/config', { steer_trim: v, profile: 3 });
+    if (!r.ok) throw new Error((await r.text()) || 'save failed');
+  } catch (e) {
+    el('mMsg').textContent = 'Trim save failed: ' + e.message;
+  }
+  trimSending = false;
+  flushTrim();
+}
+function bumpTrim(delta) {
+  const cur = Number(el('mTrim').value);
+  const next = Math.max(-100, Math.min(100, cur + delta));
+  if (next === cur) return;
+  el('mTrim').value = next;
+  el('vTrim').textContent = next;
+  flipToCustom();
+  trimPending = next;
+  flushTrim();
+}
+
 /* collapsible sections (Steering / Servo) - start collapsed */
 document.querySelectorAll('.sep[data-collapse]').forEach(sep => {
   sep.addEventListener('click', () => {
@@ -351,6 +381,8 @@ el('btnSaveName').onclick = async () => {
 el('btnLoad').onclick = loadCfg;
 el('btnCal').onclick = calibrate;
 el('btnResetHead').onclick = resetHead;
+el('btnTrimDn').onclick = () => bumpTrim(-1);
+el('btnTrimUp').onclick = () => bumpTrim(1);
 /* DLPF / gyro range apply the moment they change (partial POST - no Save trip) */
 async function saveAdvField(key, sel) {
   try {
